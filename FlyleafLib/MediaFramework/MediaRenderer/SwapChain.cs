@@ -1,16 +1,16 @@
-﻿using System.Runtime.InteropServices;
+﻿using SharpGen.Runtime;
+using System.Runtime.InteropServices;
 using System.Windows;
-
-using SharpGen.Runtime;
 using Vortice.Direct2D1;
 using Vortice.Direct3D11;
 using Vortice.DirectComposition;
+using Vortice.DirectWrite;
 using Vortice.DXGI;
-
-using ID3D11Texture2D = Vortice.Direct3D11.ID3D11Texture2D;
-using FrameStatistics = Vortice.DXGI.FrameStatistics;
-
+using Vortice.Mathematics;
 using static FlyleafLib.Utils.NativeMethods;
+using FrameStatistics = Vortice.DXGI.FrameStatistics;
+using ID3D11Texture2D = Vortice.Direct3D11.ID3D11Texture2D;
+using TextAlignment = Vortice.DirectWrite.TextAlignment;
 
 namespace FlyleafLib.MediaFramework.MediaRenderer;
 
@@ -46,6 +46,20 @@ public unsafe class SwapChain
     int                 controlWidth, controlHeight; // TBR: Updates earlier and waits Resize to update ControlWidth/ControlHeight
     Action<IDXGISwapChain2>
                         WinUIClbk;
+    //Present Error    
+    ID2D1Bitmap1          bitmapErrorMessage;    
+    IDWriteFactory        writeFactory;
+    BitmapProperties1     bitmapPropsErrorMessage = new()
+    {
+        BitmapOptions   = BitmapOptions.Target | BitmapOptions.CannotDraw,
+        PixelFormat     = Vortice.DCommon.PixelFormat.Premultiplied
+    };
+
+    // D3DImage mode
+    Action<nint>        d3dImageHandleCallback;
+    Action              d3dImagePresentCallback;
+    int                 d3dImageWidth, d3dImageHeight;
+
     bool                isCornerRadiusEmpty = true;
     IVP                 vp;
     LogHandler          Log;
@@ -71,7 +85,7 @@ public unsafe class SwapChain
             Width               = 2,
             Height              = 2,
             AlphaMode           = AlphaMode.Premultiplied,  // TBR
-            SwapEffect          = SwapEffect.FlipDiscard,   
+            SwapEffect          = SwapEffect.FlipDiscard,
             Scaling             = Scaling.Stretch,          // DComp can't validate widhth/height?*
             BufferCount         = 2,
             SampleDescription   = new SampleDescription(1, 0),
@@ -103,7 +117,9 @@ public unsafe class SwapChain
     }
     internal void Setup()
     {
-        if (WinUIClbk != null)
+        if (d3dImageHandleCallback != null)
+            SetupLocalD3DImage();
+        else if (WinUIClbk != null)
             SetupLocalWinUI();
         else if (ControlHwnd != 0)
             SetupLocal();
@@ -194,10 +210,88 @@ public unsafe class SwapChain
             return;
         }
     }
+
+    public void SetupD3DImage(int width, int height, Action<nint> handleCallback, Action presentCallback)
+    {
+        lock (Renderer.lockDevice)
+        {
+            if (!Disposed)
+            {
+                if (d3dImageHandleCallback == handleCallback)
+                    return;
+
+                DisposeLocal();
+            }
+
+            d3dImageHandleCallback  = handleCallback;
+            d3dImagePresentCallback = presentCallback;
+            d3dImageWidth           = width;
+            d3dImageHeight          = height;
+
+            if (handleCallback == null)
+                return;
+
+            if (Renderer.Disposed)
+                Renderer.SetupLocal();
+            else
+                SetupLocalD3DImage();
+        }
+    }
+    internal void SetupLocalD3DImage()
+    {
+        try
+        {
+            if (CanDebug) Log.Debug($"SC D3DImage Initializing [{d3dImageWidth}x{d3dImageHeight}]");
+
+            Disposed = false;
+
+            bb    = CreateD3DImageTexture(d3dImageWidth, d3dImageHeight);
+            bbRtv = Renderer.Device.CreateRenderTargetView(bb);
+
+            context2d = Renderer.context2d;
+            if (context2d != null)
+            {
+                using var surface = bb.QueryInterface<IDXGISurface>();
+                bitmap2d = context2d.CreateBitmapFromDxgiSurface(surface, bitmapProps2d);
+                context2d.Target = bitmap2d;
+            }
+
+            using var dxgiResource = bb.QueryInterface<IDXGIResource>();
+            nint sharedHandle = dxgiResource.SharedHandle;
+
+            Log.Debug($"[SC]  SetupLocalD3DImage  sharedHandle=0x{sharedHandle:X} size={d3dImageWidth}x{d3dImageHeight}");
+            d3dImageHandleCallback(sharedHandle);
+
+            CanPresent = d3dImageWidth > 0 && d3dImageHeight > 0;
+            vp.VPRequest(VPRequestType.Resize);
+
+            if (CanInfo) Log.Info($"SC D3DImage Initialized [{d3dImageWidth}x{d3dImageHeight}]");
+        }
+        catch (Exception e)
+        {
+            Log.Error($"SC D3DImage Initialization failed [{d3dImageWidth}x{d3dImageHeight}] ({e.Message})");
+            DisposeLocalD3DImage();
+        }
+    }
+    ID3D11Texture2D CreateD3DImageTexture(int w, int h)
+    {
+        return Renderer.Device.CreateTexture2D(new Texture2DDescription
+        {
+            Width             = (uint)w,
+            Height            = (uint)h,
+            MipLevels         = 1,
+            ArraySize         = 1,
+            Format            = Format.B8G8R8A8_UNorm,
+            SampleDescription = new SampleDescription(1, 0),
+            Usage             = ResourceUsage.Default,
+            BindFlags         = BindFlags.RenderTarget | BindFlags.ShaderResource,
+            MiscFlags         = ResourceOptionFlags.Shared,
+        });
+    }
     void SetupLocalHelper()
     {
         context2d   = Renderer.context2d;
-
+        Log.Debug($"SetupLocalHelper: controlWidth {controlWidth}, controlHeight {controlHeight}");
         // Only to avoid nulls on resize
         bb          = sc.GetBuffer<ID3D11Texture2D>(0);
         bbRtv       = Renderer.Device.CreateRenderTargetView(bb);
@@ -212,6 +306,68 @@ public unsafe class SwapChain
         }
     }
 
+    internal void SetupErrorScreenContext()
+    {
+        if (Renderer.deviceErrorScreen is not null) return;
+        Log.Debug("SetupErrorScreenContext()");
+
+        lock (Renderer.lockDevice)
+        {
+            using (var mthread = Renderer.Device.QueryInterface<ID3D11Multithread>())
+                mthread.SetMultithreadProtected(true);
+            using (var dxgidevice = Renderer.Device.QueryInterface<IDXGIDevice1>())
+            {
+                Renderer.deviceErrorScreen = D2D1.D2D1CreateDevice(dxgidevice);
+                Renderer.contextErrorScreen = Renderer.deviceErrorScreen.CreateDeviceContext();
+
+                if (bb != null)
+                {
+                    using var surface = bb.QueryInterface<IDXGISurface>();
+                    bitmapErrorMessage = Renderer.contextErrorScreen.CreateBitmapFromDxgiSurface(surface, bitmapPropsErrorMessage);
+                    Renderer.contextErrorScreen.Target = bitmapErrorMessage;
+                }
+
+                if (Renderer.errorBitmap != null)
+                {
+                    Renderer.SetErrorImage(Renderer.errorBitmap);
+                }
+
+                Renderer.brush2dFill = Renderer.contextErrorScreen.CreateSolidColorBrush(new Color(0, 128, 0));
+                Renderer.brush2dText = Renderer.contextErrorScreen.CreateSolidColorBrush(new Color(234, 234, 234));
+
+                // Create DirectWrite factory and text format
+                writeFactory = DWrite.DWriteCreateFactory<IDWriteFactory>();
+                Renderer.textFormat = writeFactory.CreateTextFormat("Arial", 36.0f);
+                Renderer.textFormat.TextAlignment = TextAlignment.Center;
+                Renderer.textFormat.WordWrapping = WordWrapping.Wrap;
+            }
+        }
+         
+        Renderer.ucfg.ResetViewport();
+    }
+
+    internal void DisposeErrorScreenContext()
+    {
+        Log.Debug("DisposeErrorScreenContext()");
+        lock (Renderer.lockDevice)
+        {
+            Renderer.brush2dText?.Dispose();
+            Renderer.brush2dFill?.Dispose();
+            Renderer.textFormat?.Dispose();
+            writeFactory?.Dispose();
+            bitmapErrorMessage?.Dispose();
+            Renderer.bitmapErrorImage?.Dispose();
+            Renderer.bitmapErrorImage = null;
+            Renderer.errorBitmap?.Dispose();
+            Renderer.errorBitmap = null;
+            Renderer.contextErrorScreen?.Dispose();
+            Renderer.deviceErrorScreen = null;
+            Renderer.deviceErrorScreen?.Dispose();
+            Renderer.contextErrorScreen = null;
+        }
+    }
+
+
     public void Dispose(bool rendererFrame = true)
     {   // External calls will not allow re-creation of previous swap chain | During swap players we keep rendererFrame alive
         lock (Renderer.lockDevice)
@@ -219,6 +375,8 @@ public unsafe class SwapChain
             DisposeLocal(rendererFrame);
             ControlHwnd = 0;
             WinUIClbk = null;
+            d3dImageHandleCallback  = null;
+            d3dImagePresentCallback = null;
         }
     }
     internal void DisposeLocal(bool rendererFrame = true)
@@ -231,6 +389,12 @@ public unsafe class SwapChain
             Renderer.ClearScreen(force: true, rendererFrame: rendererFrame);
             Disposed = true;
             CanPresent = false;
+
+            if (d3dImageHandleCallback != null)
+            {
+                DisposeLocalD3DImage();
+                return;
+            }
 
             if (WinUIClbk != null)
             {
@@ -298,6 +462,16 @@ public unsafe class SwapChain
 
         if (CanInfo) Log.Info($"SC Disposed [Hwnd: {ControlHwnd}]");
     }
+    void DisposeLocalD3DImage()
+    {
+        if (CanDebug) Log.Debug($"SC D3DImage Disposing");
+
+        d3dImageHandleCallback(nint.Zero);
+
+        DisposeHelper();
+
+        if (CanInfo) Log.Info($"SC D3DImage Disposed");
+    }
     void DisposeHelper()
     {
         if (bitmap2d != null)
@@ -305,7 +479,7 @@ public unsafe class SwapChain
             bitmap2d.Dispose();
             bitmap2d = null;
         }
-        
+
         if (VPOV != null)
         {
             VPOV.Dispose();
@@ -329,21 +503,87 @@ public unsafe class SwapChain
     {   // Externally used when a WndProc hook is not available (e.g. WinUI)
         controlWidth    = width;
         controlHeight   = height;
-
+        Log.Debug($"[SC] Resize({width}, {height}), hwnd {ControlHwnd}, vp.ControlWidth {vp.ControlWidth}, {controlHeight}");
         CanPresent = controlWidth > 0 && controlHeight > 0;
         if (controlWidth != vp.ControlWidth || controlHeight != vp.ControlHeight) // TBR: It will not refresh on restore from minimize (same sizes)
             vp.VPRequest(VPRequestType.Resize);
     }
+    public void ResizeD3DImage(int width, int height)
+    {   // Externally used by FlyleafView when the WPF control is resized
+        d3dImageWidth  = width;
+        d3dImageHeight = height;
 
+        CanPresent = width > 0 && height > 0;
+        if (width != vp.ControlWidth || height != vp.ControlHeight)
+            vp.VPRequest(VPRequestType.Resize);
+    }
+
+    int _d3dPresentCount1, _d3dPresentCount2;
     public Result Present()
-        => sc.Present(ucfg.VSync, PresentFlags.None);
+    {
+        Log.Debug($"[SC] Present, controlWidth {controlWidth}, controlHeight {controlHeight}, hwnd {ControlHwnd}");
+        UpdateSharedHandle();
+
+        if (d3dImagePresentCallback != null)
+        {
+            int n = System.Threading.Interlocked.Increment(ref _d3dPresentCount1);
+            if (n <= 5 || n % 60 == 0)
+                Console.WriteLine($"[SC]  Present(1-arg) #{n} → d3dImagePresentCallback");
+            d3dImagePresentCallback();
+            return Result.Ok;
+        }
+        return sc.Present(ucfg.VSync, PresentFlags.None);
+    }
 
     public Result Present(uint syncInterval, PresentFlags flags)
-        => sc.Present(syncInterval, flags);
+    {
+        Log.Debug($"[SC] Present (2-arg), controlWidth {controlWidth}, controlHeight {controlHeight}, hwnd {ControlHwnd}");
+         UpdateSharedHandle();
+        if (d3dImagePresentCallback != null)
+        {
+            int n = System.Threading.Interlocked.Increment(ref _d3dPresentCount2);
+            if (n <= 5 || n % 60 == 0)
+                Console.WriteLine($"[SC]  Present(2-arg) #{n} syncInterval={syncInterval} → d3dImagePresentCallback");
+            d3dImagePresentCallback();
+            return Result.Ok;
+        }
+        return sc.Present(syncInterval, flags);
+    }
 
     internal void SetSize()
     {
+        Log.Debug($"[SC] SetSize, controlWidth {controlWidth}, controlHeight {controlHeight}, hwnd {ControlHwnd}");
         // TBR lock with Resize*
+        if (d3dImageHandleCallback != null)
+        {
+            vp.UpdateSize(d3dImageWidth, d3dImageHeight);
+
+            if (bitmap2d != null)
+            {
+                context2d.Target = null;
+                bitmap2d.Dispose();
+                bitmap2d = null;
+            }
+
+            bbRtv?.Dispose();
+            bb?.Dispose();
+
+            bb    = CreateD3DImageTexture(d3dImageWidth, d3dImageHeight);
+            bbRtv = Renderer.Device.CreateRenderTargetView(bb);
+
+            if (context2d != null)
+            {
+                using var surface = bb.QueryInterface<IDXGISurface>();
+                bitmap2d = context2d.CreateBitmapFromDxgiSurface(surface, bitmapProps2d);
+                context2d.Target = bitmap2d;
+            }
+
+            using var dxgiResource = bb.QueryInterface<IDXGIResource>();
+            d3dImageHandleCallback(dxgiResource.SharedHandle);
+
+            return;
+        }
+
         vp.UpdateSize(controlWidth, controlHeight);
 
         if (!isCornerRadiusEmpty)
@@ -416,7 +656,7 @@ public unsafe class SwapChain
         dcClip.SetLeft  (0);
         dcClip.SetRight (controlWidth);
         dcClip.SetBottom(controlHeight);
-        
+
         dcClip.SetTopLeftRadiusX        ((float)ucfg.cornerRadius.TopLeft);
         dcClip.SetTopLeftRadiusY        ((float)ucfg.cornerRadius.TopLeft);
         dcClip.SetTopRightRadiusX       ((float)ucfg.cornerRadius.TopRight);
@@ -425,13 +665,27 @@ public unsafe class SwapChain
         dcClip.SetBottomLeftRadiusY     ((float)ucfg.cornerRadius.BottomLeft);
         dcClip.SetBottomRightRadiusX    ((float)ucfg.cornerRadius.BottomRight);
         dcClip.SetBottomRightRadiusY    ((float)ucfg.cornerRadius.BottomRight);
+    }    
+    internal void UpdateSharedHandle()
+    {
+        if (bb == null)
+            return;
+        try
+        {
+            using var res = bb.QueryInterface<IDXGIResource1>();
+            IntPtr handle = res.SharedHandle;
+
+            Renderer.SharedTextureHandle = handle;
+            Renderer.lastSharedHandle = handle;
+        }
+        catch { /* silently skip if not D3D11.1 */ }
     }
 
     public FrameStatistics GetFrameStatistics()
     {
         lock (Renderer.lockDevice)
         {
-            if (Disposed)
+            if (Disposed || sc == null)
                 return new();
 
             FrameStatistics stats;

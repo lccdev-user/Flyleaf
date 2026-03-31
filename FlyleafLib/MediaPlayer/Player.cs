@@ -5,6 +5,7 @@ using FlyleafLib.MediaFramework.MediaFrame;
 using FlyleafLib.MediaFramework.MediaRenderer;
 using FlyleafLib.MediaFramework.MediaPlaylist;
 using FlyleafLib.MediaFramework.MediaDemuxer;
+using FlyleafLib.Custom;
 
 namespace FlyleafLib.MediaPlayer;
 
@@ -111,7 +112,7 @@ public unsafe partial class Player : NotifyPropertyChanged, IDisposable
             MainDemuxer = main;
             main.HLSDurationChanged = UpdateDurationHLS;
             main.HLSCurTimeChanged  = UpdateCurTimeHLS;
-            
+
         }
     }
 
@@ -348,8 +349,8 @@ public unsafe partial class Player : NotifyPropertyChanged, IDisposable
 
             _ReversePlayback = value;
             UI(() => Set(ref _ReversePlayback, value, false));
-
-            if (!Video.IsOpened || !canPlay | isLive)
+            Log.Debug($"Set ReversePlayback to {value}, isOpened {Video.IsOpened}, canPlay {canPlay}, isLive {IsLive}, cusomStream {VideoDemuxer.IsCustomStream()}");
+            if (!Video.IsOpened || !canPlay | (IsLive && !VideoDemuxer.IsCustomStream()))
                 return;
 
             lock (lockActions)
@@ -366,6 +367,7 @@ public unsafe partial class Player : NotifyPropertyChanged, IDisposable
                 if (status == Status.Ended)
                 {
                     status = Status.Paused;
+                    Log.Debug("Paused.8");
                     UI(() => Status = status);
                 }
 
@@ -383,7 +385,7 @@ public unsafe partial class Player : NotifyPropertyChanged, IDisposable
                 }
 
                 reversePlaybackResync = false;
-                if (shouldPlay) Play();
+                if (shouldPlay || VideoDemuxer.IsCustomStream()) Play();
             }
         }
     }

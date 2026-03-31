@@ -60,13 +60,14 @@
   </ItemGroup>
 
   <ItemGroup>
-	<PackageReference Include="Flyleaf.FFmpeg.Bindings" Version="7.1.1" />
-	<PackageReference Include="Vortice.D3DCompiler" Version="3.7.6-beta" />
-	<PackageReference Include="Vortice.Direct3D11" Version="3.7.6-beta" />
-	<PackageReference Include="Vortice.DirectComposition" Version="3.7.6-beta" />
-	<PackageReference Include="Vortice.Mathematics" Version="1.9.3" />
-	<PackageReference Include="Vortice.MediaFoundation" Version="3.7.6-beta" />
-	<PackageReference Include="Vortice.XAudio2" Version="3.7.6-beta" />
+	<PackageReference Include="Flyleaf.FFmpeg.Bindings" Version="8.0.1" />
+	<PackageReference Include="Vortice.D3DCompiler" Version="3.8.3" />
+	<PackageReference Include="Vortice.Direct3D11" Version="3.8.3" />
+	<PackageReference Include="Vortice.DirectComposition" Version="3.8.3" />
+	<PackageReference Include="Vortice.Mathematics" Version="2.1.0" />
+	<PackageReference Include="Vortice.MediaFoundation" Version="3.8.3" />
+	<PackageReference Include="Vortice.Wpf" Version="3.8.3" />
+	<PackageReference Include="Vortice.XAudio2" Version="3.8.3" />
   </ItemGroup>
 
 </Project>

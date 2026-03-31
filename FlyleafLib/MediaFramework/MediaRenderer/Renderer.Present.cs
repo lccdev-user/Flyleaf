@@ -83,7 +83,7 @@ public unsafe partial class Renderer
         {
             lastRenderAt = DateTime.UtcNow.Ticks;
 
-            if (!SwapChain.CanPresent)
+            if (!SwapChain.CanPresent || scfg is null)
                 return true;
 
             lock (lockRenderLoops)
@@ -99,7 +99,10 @@ public unsafe partial class Renderer
                     if (!d3CanPresent)
                         return true;
 
-                    if (Frames.RendererFrame != null)
+                    if (ErrorScreenEnabled)
+                        ShowErrorScreen();
+                    else
+                        if (Frames.RendererFrame != null)
                         { D3Render(Frames.RendererFrame, false); needsClear = false; }
                 }
                 else
@@ -109,10 +112,15 @@ public unsafe partial class Renderer
                     if (VideoProcessor == VideoProcessors.D3D11)
                         return RenderIdle();
 
-                
-                    if (Frames.RendererFrame != null)
+                    if (ErrorScreenEnabled)
+                        ShowErrorScreen();
+                    else
+                        if (Frames.RendererFrame != null)
                         { FLRender(Frames.RendererFrame); needsClear = false; }
                 }
+
+                CustomProcessRequests?.Invoke();
+                needsClear = CustomProcessRequests == null && needsClear;
 
                 if (needsClear)
                 {
@@ -175,7 +183,7 @@ public unsafe partial class Renderer
 
                 return true;
             }
-            
+
             lock (lockRenderLoops)
             {
                 if (VideoProcessor == VideoProcessors.D3D11)

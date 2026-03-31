@@ -10,7 +10,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Flyleaf.FFmpeg.Bindings" Version="8.0.0" />
+    <PackageReference Include="Flyleaf.FFmpeg.Bindings" Version="8.0.1" />
   </ItemGroup>
 
   <ItemGroup>

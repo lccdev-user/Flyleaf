@@ -5,6 +5,7 @@ using static FlyleafLib.Config;
 
 using FlyleafLib.MediaFramework.MediaProgram;
 using FlyleafLib.MediaFramework.MediaStream;
+using FlyleafLib.Custom;
 
 namespace FlyleafLib.MediaFramework.MediaDemuxer;
 
@@ -506,14 +507,14 @@ public unsafe class Demuxer : RunThreadBase
             if (Config.AllowFindStreamInfo)
             {
                 /* For some reason HdmvPgsSubtitle requires more analysis (even when it has already all the information)
-                 * 
+                 *
                  * Increases delay & memory and it will not free it after analysis (fmtctx internal buffer)
                  *  - avformat_flush will release it but messes with the initial seek position (possible seek to start to force it releasing it but still we have the delay)
-                 *  
+                 *
                  * Consider
                  *  - DVD/Blu-ray/mpegts only? (possible HLS -> mpegts?*)
                  *  - Re-open in case of "Consider increasing the value for the 'analyzeduration'" (catch from ffmpeg log)
-                 *  
+                 *
                  *  https://github.com/SuRGeoNix/Flyleaf/issues/502
                  */
 
@@ -734,7 +735,7 @@ public unsafe class Demuxer : RunThreadBase
                         VideoStreams.Add(new(this, stream));
                         AVStreamToStream.Add(stream->index, VideoStreams[^1]);
                     }
-                        
+
                     break;
 
                 case AVMediaType.Subtitle:
@@ -1052,7 +1053,18 @@ public unsafe class Demuxer : RunThreadBase
                     //if (VideoStream.FixTimestamps && Duration > 0)
                         //ret = av_seek_frame(fmtCtx, -1, (long)((ticks/(double)Duration) * avio_size(fmtCtx->pb)), AVSEEK_FLAG_BYTE);
                     //else
-                    ret = ticks == StartTime // we should also call this if we seek anywhere within the first Gop
+                    if (CustomIOContext.stream is ICustomVideoStream)
+                    {
+                        if (!forward)
+                        {
+                            CustomIOContext.stream.SetPlayMode(2);
+                            ret = CustomIOContext.stream.Seek(this.LastCustomTimestamp(VideoTimeUnit.Milliseconds), SeekOrigin.End) > 0 ? 0 : AVERROR_EOF;
+                        }
+                        else
+                            ret = CustomIOContext.stream.Seek(ticks / 10000, SeekOrigin.Begin) > 0 ? 0 : AVERROR_EOF;
+                    }
+                    else
+                        ret = ticks == StartTime // we should also call this if we seek anywhere within the first Gop
                         ? avformat_seek_file(fmtCtx, -1, 0, 0, 0, 0)
                         : av_seek_frame(fmtCtx, -1, ticks / 10, forward ? SeekFlags.Frame : SeekFlags.Backward);
 
@@ -1093,10 +1105,10 @@ public unsafe class Demuxer : RunThreadBase
                         _ = avformat_flush(fmtCtx);
                     }
                     else
-                        lastSeekTime = ticks - StartTime - (hlsCtx != null ? hlsStartTime : 0);
+                        lastSeekTime = ticks - StartTime - (hlsCtx != null ? hlsStartTime : (this.IsCustomStream() ? this.StartCustomTimestamp(VideoTimeUnit.Ticks) : 0));
                 }
                 else
-                    lastSeekTime = ticks - StartTime - (hlsCtx != null ? hlsStartTime : 0);
+                    lastSeekTime = ticks - StartTime - (hlsCtx != null ? hlsStartTime : (this.IsCustomStream() ? this.StartCustomTimestamp(VideoTimeUnit.Ticks) : 0));
 
                 DisposePackets();
                 lock (lockStatus) if (Status == Status.Ended) Status = Status.Stopped;
@@ -1190,6 +1202,23 @@ public unsafe class Demuxer : RunThreadBase
 
                 if (IsHLSLive)
                     UpdateHLSTime();
+
+                if (this.IsCustomStreamLive())
+                    this.UpdateCustomDuration();
+
+                long fps = this.CustomFramePerSecond();
+                if (fps > 0)
+                {
+                    var stream = AVStreamToStream[packet->stream_index];
+                    long frameDuration = 1_000_000 / fps ;
+                    long frameTime = this.CurCustomTime(VideoTimeUnit.Microseconds);
+
+                    packet->pts = (long)(frameTime / stream.Timebase);
+                    packet->duration = frameDuration;
+                    packet->dts = AV_NOPTS_VALUE;
+
+                    Log.Debug($"[vls-video] duration {frameDuration}, time {frameTime}  | frm/s: {fps} | frmDur: {Utils.TicksToTime(frameDuration * 10)}, time {Utils.TicksToTime(frameTime * 10)}, pts {packet->pts}, timeBase {stream.Timebase}");
+                }
 
                 if (CanTrace)
                 {
@@ -1341,24 +1370,30 @@ public unsafe class Demuxer : RunThreadBase
                             curReverseVideoStack = [];
                         }
 
-                        if (curReverseStartPts != NoTs && curReverseStartPts <= VideoStream.StartTimePts)
+                        if (curReverseStartPts != NoTs && curReverseStartPts <= VideoStream.StartTimePts && !this.IsCustomStream())
                         {
                             Status = Status.Ended;
                             break;
                         }
 
-                        //Log($"[][][SEEK END] {curReverseStartPts} | {TicksToTime((long) (curReverseStartPts * VideoStream.Timebase))}");
-                        Interrupter.SeekRequest();
-                        ret = av_seek_frame(fmtCtx, VideoStream.StreamIndex, Math.Max(curReverseStartPts - curReverseSeekOffset, VideoStream.StartTimePts), SeekFlags.Backward);
-
-                        if (ret != 0)
+                        if (!this.IsCustomStream())
                         {
-                            Status = Status.Stopping;
-                            break;
+                            //Log($"[][][SEEK END] {curReverseStartPts} | {TicksToTime((long) (curReverseStartPts * VideoStream.Timebase))}");
+                            Log.Debug($"Seek(ticks {Math.Max(curReverseStartPts - curReverseSeekOffset, VideoStream.StartTimePts)}, backward)");
+                            Interrupter.SeekRequest();
+                            ret = av_seek_frame(fmtCtx, VideoStream.StreamIndex, Math.Max(curReverseStartPts - curReverseSeekOffset, VideoStream.StartTimePts), SeekFlags.Backward);
+
+                            if (ret != 0)
+                            {
+                                Status = Status.Stopping;
+                                break;
+                            }
                         }
 
                         curReverseStopPts = curReverseStartPts;
                         curReverseStartPts = NoTs;
+                        if (this.IsCustomStream())
+                            Thread.Sleep(40);
                         continue;
                     }
 
@@ -1373,6 +1408,19 @@ public unsafe class Demuxer : RunThreadBase
 
                 if (VideoStream.StreamIndex != packet->stream_index) { av_packet_unref(packet); continue; }
 
+                if (this.IsCustomStream())
+                {
+                    var stream = AVStreamToStream[packet->stream_index];
+                    long frameDuration = 1_000_000 / (long)this.CustomFramePerSecond();
+                    long frameTime = this.CurCustomTime(VideoTimeUnit.Microseconds);
+
+                    packet->pts = (long)(frameTime / stream.Timebase);
+                    packet->duration = frameDuration;
+                    packet->dts = AV_NOPTS_VALUE;
+
+                    Log.Debug($"[vls-video] duration {frameDuration}, time {frameTime} | frmDur: {Utils.TicksToTime(frameDuration * 10)}, time {Utils.TicksToTime(frameTime * 10)}, pts {packet->pts}, timeBase {stream.Timebase}");
+                }
+
                 if ((packet->flags & PktFlags.Key) != 0)
                 {
                     if (curReverseStartPts == NoTs)
@@ -1385,7 +1433,23 @@ public unsafe class Demuxer : RunThreadBase
                         drainPacket->size = 0;
                         curReverseVideoPackets.Add((nint)drainPacket);
                         curReverseVideoStack.Push(curReverseVideoPackets);
+                        Log.Debug($"[reverse] add reverse video packets (count {curReverseVideoPackets.Count}) to video stack {curReverseVideoStack.Count}");
                         curReverseVideoPackets = [];
+
+                        if (this.IsCustomStream())
+                        {
+                            if (!curReverseVideoStack.IsEmpty)
+                            {
+                                VideoPacketsReverse.Enqueue(curReverseVideoStack);
+                                Log.Debug($"[reverse] add reverse video stack (count {curReverseVideoStack.Count}) to packet queue {VideoPacketsReverse.Count} ");
+                                curReverseVideoStack = new ConcurrentStack<List<IntPtr>>();
+                            }
+
+                            curReverseStopRequestedPts = curReverseStartPts;
+                            curReverseStopPts = AV_NOPTS_VALUE;
+                            curReverseStartPts = packet->pts;
+                            Log.Debug($"curReverseStopPts <- curReverseStartPts/{curReverseStopPts}, curReverseStartPts <- packet->pts / {curReverseStartPts}");
+                        }
                     }
                 }
 
@@ -1417,6 +1481,7 @@ public unsafe class Demuxer : RunThreadBase
                     if (!curReverseVideoStack.IsEmpty)
                     {
                         VideoPacketsReverse.Enqueue(curReverseVideoStack);
+                        Log.Debug($"[reverse] add reverse video stack (count {curReverseVideoStack.Count}) to video packet queue {VideoPacketsReverse.Count}");
                         curReverseVideoStack = [];
                     }
 
@@ -1428,18 +1493,21 @@ public unsafe class Demuxer : RunThreadBase
                         break;
                     }
 
-                    //Log($"[][][SEEK] {curReverseStartPts} | {TicksToTime((long) (curReverseStartPts * VideoStream.Timebase))}");
-                    Interrupter.SeekRequest();
-                    ret = av_seek_frame(fmtCtx, VideoStream.StreamIndex, Math.Max(curReverseStartPts - curReverseSeekOffset, 0), SeekFlags.Backward);
-
-                    if (ret != 0)
+                    if (!this.IsCustomStream())
                     {
-                        Status = Status.Stopping;
-                        break;
-                    }
+                        //Log($"[][][SEEK] {curReverseStartPts} | {TicksToTime((long) (curReverseStartPts * VideoStream.Timebase))}");
+                        Interrupter.SeekRequest();
+                        ret = av_seek_frame(fmtCtx, VideoStream.StreamIndex, Math.Max(curReverseStartPts - curReverseSeekOffset, 0), SeekFlags.Backward);
 
-                    curReverseStopPts   = curReverseStartPts;
-                    curReverseStartPts  = NoTs;
+                        if (ret != 0)
+                        {
+                            Status = Status.Stopping;
+                            break;
+                        }
+
+                        curReverseStopPts = curReverseStartPts;
+                        curReverseStartPts = NoTs;
+                    }
                 }
                 else
                 {
@@ -1461,6 +1529,12 @@ public unsafe class Demuxer : RunThreadBase
         IsReversePlayback = true;
         Seek(StartTime + timestamp);
         curReverseStopRequestedPts = av_rescale_q((StartTime + timestamp) / 10, Engine.FFmpeg.AV_TIMEBASE_Q, VideoStream.AVStream->time_base);
+        if (this.IsCustomStream())
+        {
+            long frameTime = this.LastCustomTimestamp(VideoTimeUnit.Microseconds);
+            curReverseStopRequestedPts = frameTime / VideoStream.AVStream->time_base.Num;
+            Log.Debug($"EnableReversePlayback(timestamp {timestamp}: curReverseStopRequestedPts {curReverseStopRequestedPts}, vls start {this.StartCustomTimestamp(VideoTimeUnit.Microseconds)})");
+        }
     }
     public void DisableReversePlayback() => IsReversePlayback = false;
     #endregion
@@ -1562,6 +1636,11 @@ public unsafe class Demuxer : RunThreadBase
                         IsHLSLive = false;
                     }
 
+                    if (this.IsCustomStream() && !this.IsCustomStreamLive())
+                    {
+                        long duration = this.CustomDuration();
+                        VideoPackets.frameDuration = duration > 0 ? duration * 1000 * 10000 : VideoPackets.frameDuration;
+                    }
                     break;
 
                 case MediaType.Subs:
@@ -1590,7 +1669,7 @@ public unsafe class Demuxer : RunThreadBase
             /* TBR
              * We freeze UI here on Live Streams while demuxer is holding the lock and waits for new packets
              *  (check maybe if it has packets before?* - can we trust it? - otherwise interrupter release lock and get it back again?)
-             * 
+             *
              * AVDISCARD_ALL causes syncing issues between streams (TBR: bandwidth?)
              * 1) While switching video streams will not switch at the same timestamp
              * 2) By disabling video stream after a seek, audio will not seek properly
@@ -1756,7 +1835,7 @@ public unsafe class Demuxer : RunThreadBase
 
         return defaultExtenstion;
     }
-    
+
     /// <summary>
     /// Gets next VideoPacket from the existing queue or demuxes it if required (Demuxer must not be running)
     /// </summary>
@@ -1797,10 +1876,27 @@ public unsafe class Demuxer : RunThreadBase
                     packet->size = 0;
 
                     Stop();
-                    Status = Status.Ended;
+                    if (!this.IsCustomPlayStopMode())
+                        Status = Status.Ended;
                 }
 
                 return ret;
+            }
+
+            if (this.IsCustomPlayStopMode())
+            {
+                if (packet->flags.HasFlag(PktFlags.Key) || this.CustomFrameCount() > 0)
+                {
+                    long frameDuration = this.CustomDuration() * 1000;
+                    long frameTime = this.CustomFrameCount() * frameDuration;
+                    packet->pts = frameTime / VideoStream.AVStream->time_base.Num;
+                    packet->duration = frameDuration;
+                    packet->dts = AV_NOPTS_VALUE;
+                    this.AddCustomFrameCount();
+
+                    if (CanDebug)
+                        Log.Debug($"time {frameTime}  | frm/s: {this.CustomFramePerSecond()} | frmDur: {Utils.TicksToTime(frameDuration * 10)}, count {this.CustomFrameCount()}, time {Utils.TicksToTime(frameTime * 10)}");
+                }
             }
 
             if (streamIndex != -1)
@@ -1810,7 +1906,7 @@ public unsafe class Demuxer : RunThreadBase
             }
             else if (EnabledStreams.Contains(packet->stream_index))
                 return 0;
-            
+
             av_packet_unref(packet);
         }
     }
@@ -1939,6 +2035,8 @@ public unsafe class PacketQueue : Queue<nint>
                     demuxer.SetHLSCurTime(CurTime);
             }
         }
+        else if (demuxer.IsCustomStream())
+            CurTime = Math.Max(FirstTimestamp - demuxer.StartCustomTimestamp(VideoTimeUnit.Ticks), 0);
         else
             CurTime = Math.Max(FirstTimestamp - demuxer.StartTime, 0);
 

@@ -5,6 +5,7 @@ using FlyleafLib.MediaFramework.MediaRemuxer;
 using FlyleafLib.MediaFramework.MediaStream;
 using FlyleafLib.MediaPlayer;
 using FlyleafLib.Plugins;
+using FlyleafLib.Custom;
 
 namespace FlyleafLib.MediaFramework.MediaContext;
 
@@ -300,6 +301,8 @@ public unsafe partial class DecoderContext : PluginHandler
     private long CalcSeekTimestamp(Demuxer demuxer, long ms, ref bool forward)
     {
         long startTime = demuxer.hlsCtx == null ? demuxer.StartTime : demuxer.hlsCtx->first_timestamp * 10;
+        if (demuxer.IsCustomStream())
+            startTime = demuxer.StartCustomTimestamp(VideoTimeUnit.Ticks);        
         long ticks = (ms * 10000) + startTime;
 
         if (demuxer.Type == MediaType.Audio) ticks -= Config.Audio.Delay;
@@ -492,6 +495,7 @@ public unsafe partial class DecoderContext : PluginHandler
 
         int ret;
         int allowedErrors = Config.Decoder.MaxErrors;
+        double timeBase = 0;
         AVPacket* packet;
         
         lock (VideoDemuxer.lockFmtCtx)
@@ -522,6 +526,8 @@ public unsafe partial class DecoderContext : PluginHandler
                 Log.Trace($"[{stream.Type}] DTS: {(dts == -1 ? "-" : TicksToTime(dts))} PTS: {(pts == -1 ? "-" : TicksToTime(pts))} | FLPTS: {(pts == -1 ? "-" : TicksToTime(pts - VideoDemuxer.StartTime))} | CurTime: {TicksToTime(VideoDemuxer.CurTime)} | Buffered: {TicksToTime(VideoDemuxer.BufferedDuration)}");
             }
 
+            VideoDemuxer.SetPacketPts(packet, out timeBase, Log);
+            
             var codecType = VideoDemuxer.FormatContext->streams[packet->stream_index]->codecpar->codec_type;
 
             if (VideoDemuxer.IsHLSLive)
@@ -575,6 +581,20 @@ public unsafe partial class DecoderContext : PluginHandler
                             return; // EOF | Critical
                         }
 
+                        if (VideoDemuxer.IsCustomPlayStopMode())
+                        {
+                            if (!VideoDemuxer.IsSearchCompleted(VideoDecoder.frame, timeBase))
+                            {
+                                Log.Debug($"GetVideoFrame: skiped {(long)(VideoDecoder.frame->pts * timeBase)} / {VideoDemuxer.ToCustomTimestamp((long)(VideoDecoder.frame->pts * timeBase) / 1000)}," +
+                                    $"expected {VideoDemuxer.ExpectedCustomTimestamp(VideoTimeUnit.Milliseconds)}");
+                                av_frame_unref(VideoDecoder.frame);
+                                continue;
+                            }
+                            else 
+                                Log.Debug($"GetVideoFrame: {(long)(VideoDecoder.frame->pts * timeBase)} / {VideoDemuxer.ToCustomTimestamp((long)(VideoDecoder.frame->pts * timeBase) / 1000)}, " +
+                                    $"expected {VideoDemuxer.ExpectedCustomTimestamp(VideoTimeUnit.Milliseconds)}");
+                        }
+                        else
                         // Accurate seek with +- half frame distance
                         // TBR: Live streams should never been seeked at first place (maybe allow HLSLive?) * can cause infinite loop
                         if (timestamp != -1 && !VideoDemuxer.IsLive && (long)(VideoDecoder.frame->pts * VideoStream.Timebase) - VideoDemuxer.StartTime + (VideoStream.FrameDuration / 2) < timestamp)

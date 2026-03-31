@@ -1,6 +1,7 @@
 ﻿using Vortice.Direct3D11;
 
 using FlyleafLib.MediaFramework.MediaDecoder;
+using FlyleafLib.Custom;
 
 namespace FlyleafLib.MediaPlayer;
 
@@ -26,8 +27,10 @@ unsafe partial class Player
         int  loops          = 0;
 
         if (CanTrace) Log.Trace("Buffering");
+        Log.Debug($"Buffering: isVideoSwitch {isVideoSwitch}, IsPlaying {IsPlaying}, isVideoBufferReady {VideoDemuxer.IsVideoBufferReady()}");
+        while (isVideoSwitch && IsPlaying)  Thread.Sleep(10);
 
-        while (isVideoSwitch && IsPlaying) Thread.Sleep(10);
+        if(!VideoDemuxer.IsVideoBufferReady()) Thread.Sleep(40);
 
         VideoDemuxer.Start();
         VideoDecoder.Start();
@@ -160,7 +163,7 @@ unsafe partial class Player
 
         if (shouldStop && !(decoderHasEnded && IsPlaying && vFrame != null))
         {
-            Log.Info("Stopped");
+            Log.Info($"Stopped : shouldStop {shouldStop}, decoderHasEnded {decoderHasEnded}, isPlaying {IsPlaying}, frame is null {vFrame is null}, gotVideo {gotVideo}, state {status}");
             return false;
         }
 
@@ -204,7 +207,29 @@ unsafe partial class Player
         int vDistanceMs, sDistanceMs, dDistanceMs;
         long elapsedTicks;
         bool refreshed = false;
-        
+        if (VideoDemuxer.IsCustomPlayStopMode())
+        {
+           long ms  = VideoDemuxer.ExpectedCustomTimestamp(VideoTimeUnit.Milliseconds);
+
+           Log.Debug($"Mode : PlayStop, expected time {ms}");
+           Renderer.RenderIdleStart();
+
+           requiresBuffering = true;
+           ResetFrameStats();
+
+           if (sFramePrev != null)
+           {
+               sFramePrev = null;
+               Renderer.SubsDispose();
+               Subtitles.ClearSubsText();
+           }
+
+           decoder.PauseDecoders(); // TBR: Required to avoid gettings packets between Seek and ShowFrame which causes resync issues
+           StopScreamerVASDAudio();
+
+           decoder.GetVideoFrame(ms * 10000);
+        }
+
         while (status == Status.Playing)
         {
             // Seeks and then requiresBuffering | TBR: missing SeekCompleted callback?
@@ -251,7 +276,7 @@ unsafe partial class Player
                 OnBufferingStarted();
                 StopScreamerVASDAudio();
                 BufferVASD();
-                
+
                 if (!seeks.IsEmpty)
                     continue;
 
@@ -260,9 +285,15 @@ unsafe partial class Player
                     if (decoderHasEnded)
                         OnBufferingCompleted();
                     else
-                        Log.Warn("[V] Buffer Empty");
-
-                    break;
+                        Log.Warn("[V] Buffer Empty.1");
+                    if (!(VideoDemuxer.IsCustomStream() && !VideoDemuxer.IsCustomPlayStopMode()))
+                        break;
+                    else
+                    {
+                        requiresBuffering = true;
+                        Thread.Sleep(10);
+                        continue;
+                    }
                 }
 
                 requiresBuffering = false;
@@ -378,7 +409,7 @@ unsafe partial class Player
                         framesDisplayed++;
                         refreshed = true;
                     }
-                    
+
                     // Sleep 10ms and recalculate distance
                     else
                         Thread.Sleep(10);
@@ -392,18 +423,26 @@ unsafe partial class Player
             // Present Current | Render Next
             if (!refreshed)
             {
-                if (CanTrace) Log.Trace($"[V] Presenting {TicksToTime(vFrame.Timestamp)}{(secondField ? " | SF" : "")}");
-
-                if (Renderer.PresentPlay())
+                if (CanTrace) Log.Trace($"[V] Presenting {TicksToTime(vFrame.Timestamp)}{(secondField ? " | SF" : "")}, frameTime {VideoDemuxer.ToCustomTimestamp(vFrame.Timestamp / 1000)}");
+                if (!VideoDemuxer.SkipFrameBySearch(VideoDemuxer.ToCustomTimestamp(vFrame.Timestamp / 1000)))
                 {
-                    framesDisplayed++;
-                    UpdateCurTime(vFrame.Timestamp, false);
+                    if (Renderer.PresentPlay())
+                    {
+                        framesDisplayed++;
+                        UpdateCurTime(vFrame.Timestamp, false);
+                    }
+                    else
+                        framesFailed++;
                 }
-                else
-                    framesFailed++;
             }
             else
                 refreshed = false;
+            if (VideoDemuxer.IsSearchCompleted(VideoDemuxer.ToCustomTimestamp(vFrame.Timestamp / 1000)))
+            {
+                Log.Debug($"PlayVASD - search completed, showCnt {showFrameCount}, displayed {framesDisplayed}");
+                status = Status.Paused;
+                break;
+            }
 
             if (Config.Player.MaxLatency != 0)
                 CheckLatency();
@@ -487,7 +526,7 @@ unsafe partial class Player
                     }
                 }
             }
-            
+
             if (Data.isOpened)
             {
                 elapsedTicks = (long)(sw.ElapsedTicks * SWFREQ_TO_TICKS);
@@ -591,7 +630,7 @@ unsafe partial class Player
     }
 
     long GetBufferedDuration() // No speed aware
-        => (vFrames.Count + vPackets.Count) * VideoDecoder.VideoStream.FrameDuration;
+        => VideoDecoder.VideoStream is not null ? (vFrames.Count + vPackets.Count) * VideoDecoder.VideoStream.FrameDuration : 0;
 
     void ScreamerVASDAudio()
     {
@@ -599,7 +638,7 @@ unsafe partial class Player
         long desyncMs       = 0;    // use Ms to avoid rescale inaccuracy
         long expectingPts   = NoTs; // Will be set on resync
         bool shouldResync   = true;
-        
+
         const long MIN_PLAY_BUFFER  = 40_0000;  // Start fill (TBR: allow some space from MAX to avoid filling all time?*)
         const long MAX_PLAY_BUFFER  = 80_0000;  // Stop  fill (try to keep it low so we can easier switch speed?*)
         const long MIN_DEC_BUFFER   = 19_0000;  // Resync when enough decoded buffer (related to MaxAudioFrame, keep it low for now)
@@ -620,7 +659,7 @@ unsafe partial class Player
             }
 
             bufferTicks = Audio.GetBufferedDuration();
-            
+
             if (!shouldResync)
             {
                 if (bufferTicks > MIN_PLAY_BUFFER)      // Play Buffer has enough samples
@@ -705,7 +744,7 @@ unsafe partial class Player
                 Audio.ClearBuffer();
 
                 if (CanInfo) Log.Info($"[A] Resynced at {TicksToTimeMini(aFrame.Timestamp)} [Diff: {TicksToTimeMini((long)((aFrame.Timestamp - startTicks) / speed) - delayTicks)} | {TicksToTimeMini((long)(sw.ElapsedTicks * SWFREQ_TO_TICKS))}]");
-                
+
                 // Fill Enough Samples
                 desyncMs = 0;
                 FillBuffer();
@@ -732,7 +771,7 @@ unsafe partial class Player
                 }
             }
         }
-        
+
         isScreamerVASDAudio = false;
         Audio.ClearBuffer();
 

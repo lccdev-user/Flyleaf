@@ -1,8 +1,6 @@
 ﻿using Vortice.Direct3D;
 using Vortice.Direct3D11;
 using Vortice.DXGI;
-
-using FlyleafLib.MediaFramework.MediaDecoder;
 using FlyleafLib.MediaFramework.MediaFrame;
 
 using ID3D11Texture2D = Vortice.Direct3D11.ID3D11Texture2D;
@@ -707,7 +705,7 @@ color.a = YUVToRGBFull(float3(Texture1.Sample(Sampler, float2({x}, {y})).r, floa
                 device.CreateShaderResourceView(ffTexture, srvDesc[0]),
                 device.CreateShaderResourceView(ffTexture, srvDesc[1])],
         };
-
+        CustomFillPlanesAction(mFrame);
         frame = av_frame_alloc();
         return mFrame;
     }

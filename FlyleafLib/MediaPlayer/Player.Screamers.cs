@@ -2,6 +2,7 @@
 
 using FlyleafLib.MediaFramework.MediaDecoder;
 using FlyleafLib.MediaFramework.MediaFrame;
+using FlyleafLib.Custom;
 
 namespace FlyleafLib.MediaPlayer;
 
@@ -59,9 +60,12 @@ unsafe partial class Player
         if (!vFrames.TryDequeue(out var vFrame))
             return;
 
-        Log.Error($"ShowOneFrame #{vFrame.Id}");
-        Renderer.RenderRequest(vFrame);
+        var skipFrame = VideoDemuxer.SkipFrameBySearch(VideoDemuxer.ToCustomTimestamp(vFrame.Timestamp / 1000));
         
+        Log.Error($"ShowOneFrame #{vFrame.Id} - {(skipFrame ? "skiped" : "")}, timestamp {vFrame.Timestamp} / {VideoDemuxer.ToCustomTimestamp(vFrame.Timestamp / 1000)}, count {showFrameCount}/{framesDisplayed}");
+        if (!skipFrame)
+            Renderer.RenderRequest(vFrame);
+
         UpdateCurTime(vFrame.Timestamp);
         showFrameCount++;
 
@@ -190,7 +194,8 @@ unsafe partial class Player
 
         int vDistanceMs, sleepMs;
         long elapsedTicks, startTicks = 0;
-
+        int retries = 10;
+        Log.Debug($"ScreamerReverse: Start, status {status}");
         while (status == Status.Playing)
         {
             if (seeks.TryPop(out var seekData))
@@ -221,10 +226,21 @@ unsafe partial class Player
 
                 // Recoding*
                 while (vFrames.IsEmpty && status == Status.Playing && VideoDecoder.IsRunning) Thread.Sleep(15);
+                Log.Debug($"ScreamerReverse: waiting loop, vFrames.isEmpty {vFrames.IsEmpty}, status {status}, decoder is running {VideoDecoder.IsRunning}");
                 OnBufferingCompleted();
                 if (!vFrames.TryDequeue(out vFrame))
-                    { Log.Warn("No video frame"); break; }
-
+                {
+                    Log.Warn("No video frame");
+                    if (VideoDemuxer.IsCustomStream() && retries > 0)
+                    {
+                        Thread.Sleep(50);
+                        retries--;
+                        continue;
+                    }
+                    else
+                        break;
+                }
+                retries = 10;
                 startTicks = vFrame.Timestamp;
                 UpdateCurTime(vFrame.Timestamp, false);
                 Renderer.RenderIdleStop();

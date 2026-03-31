@@ -6,6 +6,7 @@ using FlyleafLib.MediaFramework.MediaRemuxer;
 using FlyleafLib.MediaFramework.MediaRenderer;
 using FlyleafLib.MediaFramework.MediaStream;
 using FlyleafLib.MediaPlayer;
+using FlyleafLib.Custom;
 
 namespace FlyleafLib.MediaFramework.MediaDecoder;
 
@@ -791,7 +792,7 @@ public unsafe class VideoDecoder : DecoderBase
         int ret = 0;
         int allowedErrors = Config.Decoder.MaxErrors;
         AVPacket *packet;
-
+        Log.Debug($"RunInternalReverse(): Start, max video frames {Config.Decoder.MaxVideoFrames}, status {Status}");
         do
         {
             // While Packets Queue Empty (Drain | Quit if Demuxer stopped | Wait until we get packets)
@@ -814,7 +815,7 @@ public unsafe class VideoDecoder : DecoderBase
                     {
                         if (CanDebug) Log.Debug($"Demuxer is not running [Demuxer Status: {demuxer.Status}]");
 
-                        int retries = 5;
+                        int retries = demuxer.IsCustomStream() ? 50 : 5;
 
                         while (retries > 0)
                         {
@@ -855,6 +856,7 @@ public unsafe class VideoDecoder : DecoderBase
 
                 curReverseVideoStack.TryPop(out curReverseVideoPackets);
                 curReversePacketPos = 0;
+                Log.Debug($"[reverse] next GOP {curReverseVideoPackets.Count} pks, status {Status}");
             }
 
             while (curReverseVideoPackets.Count > 0 && Status == Status.Running)
@@ -880,7 +882,8 @@ public unsafe class VideoDecoder : DecoderBase
                     {
                         keyPacketRequired = false;
                         curReversePacketPos = 0;
-                        break;
+                        if (!demuxer.IsCustomStream())
+                            break;
                     }
 
                     packet = (AVPacket*)curReverseVideoPackets[curReversePacketPos++];
@@ -1156,6 +1159,8 @@ public unsafe class VideoDecoder : DecoderBase
                 {
                     if (CanDebug) Log.Debug("Ignoring non-key packet");
                     av_packet_unref(demuxer.packet);
+                    if(demuxer.IsCustomStream() && demuxer.CustomFrameCount() > 1)
+                        return AVERROR_EOF;
                     continue;
                 }
 

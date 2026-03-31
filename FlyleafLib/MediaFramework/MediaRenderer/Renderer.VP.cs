@@ -1,17 +1,15 @@
-﻿using System.Text.Json.Serialization;
-using System.Windows;
-
-using WPoint = System.Windows.Point;
-
-using Vortice.Direct3D11;
-using Vortice.Mathematics;
-
+﻿using FlyleafLib.Custom;
 using FlyleafLib.MediaFramework.MediaFrame;
 using FlyleafLib.MediaFramework.MediaStream;
+using System.Text.Json.Serialization;
+using System.Windows;
+using Vortice.Direct3D11;
+using Vortice.Mathematics;
+using WPoint = System.Windows.Point;
 
 namespace FlyleafLib.MediaFramework.MediaRenderer;
 
-public unsafe partial class Renderer : IVP
+public unsafe partial class Renderer : IVP, ICustomRenderer
 {
     public event EventHandler ViewportChanged;
 
@@ -53,26 +51,26 @@ public unsafe partial class Renderer : IVP
          * - Performance & Power Efficiency
          * - Deinterlace & Super Resolution     ** Might Switch VP
          * - Scaling (?) & Extra/More Accurate Filters (?)
-         * 
+         *
          * D3 Cons
          * - Extra rendering steps for SW Frames
-         * 
+         *
          * FL Pros
          * - Alpha Channel & Split Frame Alpha  ** Might Switch VP
          * - HV Flip                            ** Might Switch VP
          * - HDR to SDR
-         * 
+         *
          * Sws Pros
          * - More Pixel Formats (e.g. Paletted, BE, higher bit depth?)
          * - More Scaling Algorithms (but we don't use them currently as FillPlanes is at pre-Scale stage *only for Bitmap subs)
-         * 
+         *
          * Sws Cons
          * - Slow Performance (CPU/RAM)
          */
 
         canD3 = vp != null && (VideoDecoder.VideoAccelerated ||
             (!scfg.VFlip && scfg.PixelComp0Depth == 8));
-        
+
         canFL = VideoDecoder.VideoAccelerated ||
             (!scfg.PixelFormatDesc->flags.HasFlag(PixFmtFlags.Pal) && (!scfg.PixelFormatDesc->flags.HasFlag(PixFmtFlags.Be) || scfg.PixelComp0Depth <= 8));
 
@@ -106,7 +104,7 @@ public unsafe partial class Renderer : IVP
     {
         lock (lockRenderLoops)
             Frames.SetRendererFrame(null);
-        
+
         scfg = videoStream;
         VPConfigHelper();
 
@@ -164,7 +162,6 @@ public unsafe partial class Renderer : IVP
     void VPSwitchFrame(VideoFrame mFrame)
     {   // TBR: Cannot run in parallel with Fill Frames!!! (same txt/srv/swsframe etc..)
         mFrame.DisposeTexture();
-
         if (mFrame.AVFrame != null) // HW Frame
         {
             if (VideoProcessor == VideoProcessors.D3D11)
@@ -196,7 +193,7 @@ public unsafe partial class Renderer : IVP
         var vpRequests  = VPRequestType.RotationFlip | VPRequestType.Crop | VPRequestType.UpdatePS; // TBR: we should set them all here as we don't compare with previous states
         VideoProcessor  = VPSelection();
 
-        if (CanTrace) Log.Trace($"Preparing planes for {scfg.PixelFormatStr} with {VideoProcessor}");
+        if (CanDebug) Log.Debug($"Preparing planes for {scfg.PixelFormatStr} with {VideoProcessor}");
 
         if (VideoProcessor == VideoProcessors.D3D11)
         {
@@ -274,6 +271,7 @@ public unsafe partial class Renderer : IVP
     void SetSize()
     {
         SwapChain.SetSize();
+        CustomSetSize?.Invoke();
 
         fillRatio = ControlWidth / (double)ControlHeight;
         if (ucfg.AspectRatio == AspectRatio.Fill)
@@ -332,7 +330,7 @@ public unsafe partial class Renderer : IVP
             if (ucfg.AspectRatio == AspectRatio.Keep)
                 player?.Host?.Player_RatioChanged(curRatio);
         }
-        
+
         vpRequests &= ~VPRequestType.RotationFlip;
         vpRequests |=  VPRequestType.Viewport;
     }
@@ -351,7 +349,6 @@ public unsafe partial class Renderer : IVP
 
         if (isKeep)
             player?.Host?.Player_RatioChanged(curRatio); // return handled and avoid SetViewport?*
-
         vpRequests &= ~VPRequestType.AspectRatio;
         vpRequests |=  VPRequestType.Viewport;
     }
@@ -498,7 +495,7 @@ public class VPConfig : NotifyPropertyChanged
     internal bool vflip;
 
     [JsonIgnore]
-    public double           Zoom                    { get => SnapToInt(zoom * 100); set { if (Set(ref zoom, SnapToInt(value / 100))) vp?.VPRequest(VPRequestType.Viewport); } }
+    public double           Zoom                    { get => SnapToInt(zoom * 100); set { if (Set(ref zoom, SnapToInt(vp?.ValidateZoom(value / 100) ?? value / 100))) vp?.VPRequest(VPRequestType.Viewport); } }
     internal double zoom = 1;
 
     [JsonIgnore]
@@ -544,7 +541,7 @@ public class VPConfig : NotifyPropertyChanged
     {
         /* Notes
          * Zooms in a way that the specified point before zoom will be at the same position after zoom
-         * 
+         *
          * Zoomed Point (ZP)    // the current point in a -possible- zoomed viewport
          * Zoom (Z)
          * Unzoomed Point (UP)  // the actual pixel of the current point
@@ -556,7 +553,7 @@ public class VPConfig : NotifyPropertyChanged
          * CP = VP / (ZP - 1) (when UP = ZP)
          */
 
-        zoom = SnapToInt(zoom);
+        zoom = SnapToInt(vp.ValidateZoom(zoom));
         Viewport view = vp.Viewport;
 
         if (!(p.X >= view.X && p.X < view.X + view.Width && p.Y >= view.Y && p.Y < view.Y + view.Height)) // Point out of view
@@ -584,7 +581,7 @@ public class VPConfig : NotifyPropertyChanged
             p.X -= (vp.SideXPixels / 2 + (panXOffset * vp.ControlWidth));
             p.Y -= (vp.SideYPixels / 2 + (panYOffset * vp.ControlHeight));
         }
-    
+
         double GetCenterPoint(double zoom, double offset)
             => zoom == 1 ? offset : offset / SnapToInt(zoom - 1); // possible bug when zoom = 1 (noticed in out of bounds zoom out)
     }

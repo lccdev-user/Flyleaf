@@ -81,6 +81,7 @@ partial class Player
                     ScreamerZeroLatency();
                 else if (ReversePlayback)
                 {
+                    Log.Debug("Start ScreamerReverse()");
                     shouldFlushNext = true;
                     ScreamerReverse();
                 }
@@ -165,7 +166,7 @@ partial class Player
         {
             if (!canPlay || status == Status.Ended)
                 return;
-
+            Log.Debug("Player.Pause()");
             status = Status.Paused;
             UI(() => Status = status);
 

@@ -1,15 +1,11 @@
-﻿using System.Runtime.InteropServices;
-
+﻿using FlyleafLib.MediaFramework.MediaFrame;
+using System.Runtime.InteropServices;
 using Vortice;
 using Vortice.Direct3D11;
 using Vortice.DXGI;
 using Vortice.Mathematics;
-
 using ID3D11VideoContext    = Vortice.Direct3D11.ID3D11VideoContext;
 using ID3D11VideoDevice     = Vortice.Direct3D11.ID3D11VideoDevice;
-
-using FlyleafLib.MediaFramework.MediaDecoder;
-using FlyleafLib.MediaFramework.MediaFrame;
 
 namespace FlyleafLib.MediaFramework.MediaRenderer;
 
@@ -87,7 +83,7 @@ public unsafe partial class Renderer
         var d3CacheEntry = D3CacheEntry.Get(GPUAdapter.Luid, out var needsFillUnlock);
         if (d3CacheEntry.Failed && !needsFillUnlock)
             return;
-        
+
         vd = device.QueryInterface<ID3D11VideoDevice>();
         if (vd == null)
         {
@@ -95,7 +91,7 @@ public unsafe partial class Renderer
 
             return;
         }
-        
+
         vc = context.QueryInterface<ID3D11VideoContext>();
         if (vc != null)
             if (vd.CreateVideoProcessorEnumerator   (ref vped, out ve).Success)    // TBR: vpcd config (maybe requires max sizes)
@@ -166,7 +162,6 @@ public unsafe partial class Renderer
 
         d3txtDesc.Width = scfg.txtWidth;
         d3txtDesc.Height= scfg.txtHeight;
-
         return true;
     }
     bool D3SWConfig()
@@ -227,7 +222,6 @@ color = float4(Texture2.Sample(Sampler, input.Texture).r, Texture3.Sample(Sample
 ");
             }
         }
-
         return true;
     }
 
@@ -239,7 +233,6 @@ color = float4(Texture2.Sample(Sampler, input.Texture).r, Texture3.Sample(Sample
             av_frame_unref(frame);
             return null;
         }
-
         vpivd.Texture2D.ArraySlice = (uint)frame->data[1];
 
         VideoFrame mFrame = new()
@@ -248,7 +241,7 @@ color = float4(Texture2.Sample(Sampler, input.Texture).r, Texture3.Sample(Sample
             Timestamp   = (long)(frame->pts * scfg.Timebase) - VideoDecoder.Demuxer.StartTime,
             VPIV        = vd.CreateVideoProcessorInputView(ffTexture, ve, vpivd)
         };
-
+        CustomFillPlanesAction(mFrame);
         frame = av_frame_alloc();
         return mFrame;
     }
@@ -262,7 +255,6 @@ color = float4(Texture2.Sample(Sampler, input.Texture).r, Texture3.Sample(Sample
             mFrame.VPIV = vd.CreateVideoProcessorInputView(mFrame.Texture[0], ve, vpivd);
             return mFrame;
         }
-
         var nv12 = device.CreateTexture2D(d3txtDesc);
         var rtvY = device.CreateRenderTargetView(nv12, d3rtvDesc[0]);
 
@@ -282,7 +274,7 @@ color = float4(Texture2.Sample(Sampler, input.Texture).r, Texture3.Sample(Sample
             context.Draw(6, 0);
             rtvUV.Dispose();
         }
-        
+
         mFrame.Dispose();
         mFrame.Texture  = [nv12];
         mFrame.VPIV     = vd.CreateVideoProcessorInputView(nv12, ve, vpivd);
@@ -347,7 +339,7 @@ color = float4(Texture2.Sample(Sampler, input.Texture).r, Texture3.Sample(Sample
                 Math.Max((int)view.Y, 0),
                 Math.Min(right      , width),
                 Math.Min(bottom     , height));
-            
+
         double croppedWidth     = d3txtDesc.Width   - crop.Width;
         double croppedHeight    = d3txtDesc.Height  - crop.Height;
         int dstWidth            = dst.Right  - dst.Left;
@@ -377,7 +369,7 @@ color = float4(Texture2.Sample(Sampler, input.Texture).r, Texture3.Sample(Sample
 
             scaleX      = croppedWidth  / view.Width;
             scaleY      = croppedHeight / view.Height;
-                
+
             srcLeft     = (int)(crop.Left + cropRight  * scaleX);
             srcTop      = (int)(crop.Top  + cropBottom * scaleY);
             srcRight    = srcLeft + (int)(dstWidth  * scaleX);
@@ -390,7 +382,7 @@ color = float4(Texture2.Sample(Sampler, input.Texture).r, Texture3.Sample(Sample
 
             scaleXRot   = croppedWidth  / view.Height;
             scaleYRot   = croppedHeight / view.Width;
-                
+
             srcLeft     = (int)(crop.Left + cropTop    * scaleXRot);
             srcTop      = (int)(crop.Top  + cropRight  * scaleYRot);
             srcRight    = srcLeft + (int)(dstHeight * scaleXRot);
@@ -403,7 +395,7 @@ color = float4(Texture2.Sample(Sampler, input.Texture).r, Texture3.Sample(Sample
 
             scaleXRot   = croppedWidth  / view.Height;
             scaleYRot   = croppedHeight / view.Width;
-                
+
             srcLeft     = (int)(crop.Left + cropBottom * scaleXRot);
             srcTop      = (int)(crop.Top  + cropLeft   * scaleYRot);
             srcRight    = srcLeft + (int)(dstHeight * scaleXRot);
@@ -411,13 +403,13 @@ color = float4(Texture2.Sample(Sampler, input.Texture).r, Texture3.Sample(Sample
         }
         else
             srcLeft = srcTop = srcRight = srcBottom = 0;
-            
+
         RawRect src = new(
             Math.Max(srcLeft    , 0),
             Math.Max(srcTop     , 0),
             Math.Min(srcRight   , (int)d3txtDesc.Width),
             Math.Min(srcBottom  , (int)d3txtDesc.Height));
-            
+
         vc.VideoProcessorSetStreamSourceRect(vp, 0, true, src);
         vc.VideoProcessorSetStreamDestRect  (vp, 0, true, dst);
     }
@@ -526,7 +518,7 @@ color = float4(Texture2.Sample(Sampler, input.Texture).r, Texture3.Sample(Sample
         IntPtr          paramPtr    = Marshal.AllocHGlobal(sizeof(uint));
         SuperResIntel   intel       = new() { param = paramPtr };
         GCHandle        handle      = GCHandle.Alloc(intel, GCHandleType.Pinned);
-            
+
         intel.function = IntelFunction.kIntelVpeFnVersion;
         Marshal.WriteInt32(paramPtr, 3); // kIntelVpeVersion3
         vc.VideoProcessorSetOutputExtension(vp,     GUID_SUPERRES_INTEL, (uint)sizeof(SuperResIntel), handle.AddrOfPinnedObject());
@@ -556,7 +548,6 @@ color = float4(Texture2.Sample(Sampler, input.Texture).r, Texture3.Sample(Sample
 
             vpRequests  = vpRequestsIn;
             vpRequestsIn= VPRequestType.Empty;
-
             if (vpRequests.HasFlag(VPRequestType.BackColor))
                 SetBackColor();
 
@@ -583,7 +574,6 @@ color = float4(Texture2.Sample(Sampler, input.Texture).r, Texture3.Sample(Sample
     {
         if (frame.VPIV == null)
             return; // TODO: when we dispose on switch
-
         /* [Undocumented Deinterlace]
         * Currently we don't use Past/Future frames so we consider only Bob/Weave methods (we also consider that are supported by D3D11VP)
         * For Bob -double rate- we set the second field (InputFrameOrField/OutputIndex)
@@ -655,7 +645,7 @@ color = float4(Texture2.Sample(Sampler, input.Texture).r, Texture3.Sample(Sample
             dump += $"{cap,-25} {((vpCaps.InputFormatCaps & cap) != 0 ? "yes" : "no")}\r\n";
 
         dump += $"\n[Video Processor Filter Caps]\r\n";
-        
+
         foreach (VideoProcessorFilterCaps filter in D3CacheEntry.AllFilterCaps)
             if ((vpCaps.FilterCaps & filter) != 0)
             {

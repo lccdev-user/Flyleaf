@@ -45,6 +45,9 @@ public unsafe class CustomIOContext
 
         if (demuxer.Interrupter.ShouldInterrupt(null) != 0) return AVERROR_EXIT;
 
+        if (demuxer.CustomIOContext.stream == null)
+            return AVERROR_EXIT;
+
         ret = demuxer.CustomIOContext.stream.Read(new Span<byte>(buffer, bufferSize));
 
         if (ret > 0)

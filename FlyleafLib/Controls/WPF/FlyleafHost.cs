@@ -116,7 +116,7 @@ public class FlyleafHost : ContentControl, IHostPlayer, IDisposable
     static bool         isDesignMode;
     static int          idGenerator = 1;
     static WindowStyles NONE_STYLE      = WindowStyles.WS_MINIMIZEBOX | WindowStyles.WS_CLIPSIBLINGS | WindowStyles.WS_CLIPCHILDREN | WindowStyles.WS_VISIBLE; // WS_MINIMIZEBOX required for swapchain
-    
+
     double              curResizeRatio;
     bool                surfaceClosed, surfaceClosing, overlayClosed;
     double              panPrevX, panPrevY;
@@ -472,6 +472,26 @@ public class FlyleafHost : ContentControl, IHostPlayer, IDisposable
     public static readonly DependencyProperty PlayerProperty =
         DependencyProperty.Register(nameof(Player), typeof(Player), _flType, new(null, OnPlayerChanged));
 
+    public Player ReplicaPlayer
+    {
+        get => (Player)GetValue(ReplicaPlayerProperty);
+        set => SetValue(ReplicaPlayerProperty, value);
+    }
+    public static readonly DependencyProperty ReplicaPlayerProperty =
+    DependencyProperty.Register(nameof(ReplicaPlayer), typeof(Player), typeof(FlyleafHost), new PropertyMetadata(null, OnReplicaPlayerChanged));
+
+    private static void OnReplicaPlayerChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        if (isDesignMode)
+            return;
+
+        FlyleafHost host = d as FlyleafHost;
+        if (host.Disposed)
+            return;
+
+        host.SetReplicaPlayer((Player)e.OldValue);
+    }
+
     public ControlTemplate OverlayTemplate
     {
         get => (ControlTemplate)GetValue(OverlayTemplateProperty);
@@ -761,7 +781,7 @@ public class FlyleafHost : ContentControl, IHostPlayer, IDisposable
             Detach();
 
             Owner           = owner;
-            OwnerHandle     = ownerHandle;  
+            OwnerHandle     = ownerHandle;
             Surface.Title   = Owner.Title;
             Surface.Icon    = Owner.Icon;
 
@@ -915,13 +935,13 @@ public class FlyleafHost : ContentControl, IHostPlayer, IDisposable
             }
 
             //Log.Error($"{rectInit} | {rectIntersect}");
-            
+
             if (rectInit != rectInitLast)
             {
                 rectInitLast = rectInit;
                 SetRect(rectInit);
             }
-            
+
             if (rectIntersect != Rect.Empty)
             {
                 rectIntersect.X -= rectInit.X;
@@ -1184,7 +1204,7 @@ public class FlyleafHost : ContentControl, IHostPlayer, IDisposable
     private void Overlay_MouseLeftButtonUp(object sender, MouseButtonEventArgs e) => SO_ReleaseCapture(Overlay);
     private void Surface_LostMouseCapture(object sender, MouseEventArgs e) => SO_ReleaseCapture(Surface);
     private void Overlay_LostMouseCapture(object sender, MouseEventArgs e) => SO_ReleaseCapture(Overlay);
-    
+
     private void SO_ReleaseCapture(Window window)
     {
         if (!IsResizing && !IsPanMoving && !IsDragMoving && !IsDragMovingOwner)
@@ -1445,10 +1465,10 @@ public class FlyleafHost : ContentControl, IHostPlayer, IDisposable
         /* Out of monitor's bound issue
          * When hiding the surface and showing it back, windows will consider it's position/size invalid and will try to fix it without sending any position/size changed events
          * C# ActualWidth/ActualHeight will not be updated and the overlay will not fit properly to the surface
-         * 
+         *
          * TBR: Consider when showing the window to prevent windows changing its position/size (requires win32 API and it seems that causes more issues)?
          */
-        
+
         GetWindowRect(SurfaceHandle, ref curRect);
         SetWindowPos(OverlayHandle, IntPtr.Zero, 0, 0, (int)Math.Round((curRect.Right - curRect.Left) * DpiX), (int)Math.Round((curRect.Bottom - curRect.Top) * DpiY),
             (uint)(SetWindowPosFlags.SWP_NOZORDER | SetWindowPosFlags.SWP_NOACTIVATE));
@@ -1530,10 +1550,17 @@ public class FlyleafHost : ContentControl, IHostPlayer, IDisposable
             Player.Config.Video.CornerRadius = IsFullScreen ? CornerRadiusEmpty : CornerRadius;
             Player_RatioChanged(Player.Renderer.curRatio);
         }
-        
+
         if (Surface != null)
             Player.Renderer.SwapChain.Setup(SurfaceHandle);
     }
+
+    public virtual void SetReplicaPlayer(Player oldPlayer)
+    {
+        // temporary placeholder
+    }
+
+
     public virtual void SetSurface(bool fromSetOverlay = false)
     {
         if (Surface != null)
@@ -1556,7 +1583,7 @@ public class FlyleafHost : ContentControl, IHostPlayer, IDisposable
             Surface.AllowsTransparency = scb.Color.A < 255;
         else
             Surface.AllowsTransparency = true; // Non-solid consider true?
-        
+
         // When using ItemsControl with ObservableCollection<Player> to fill DataTemplates with FlyleafHost EnsureHandle will call Host_loaded
         if (_IsAttached) Loaded -= Host_Loaded;
         SurfaceHandle = new WindowInteropHelper(Surface).EnsureHandle();
@@ -2131,7 +2158,7 @@ public class FlyleafHost : ContentControl, IHostPlayer, IDisposable
             screen          = new(bounds.Left / DpiX, bounds.Top / DpiY, bounds.Width / DpiX, bounds.Height / DpiY);
             sizeBoundsMLD   = new((int)Surface.MinWidth, (int)Math.Min(Surface.MaxWidth, bounds.Width), (int)Surface.MinHeight, (int)Math.Min(Surface.MaxHeight, bounds.Height));
         }
-        
+
         if (curResizeRatio >= 1)
         {
             WindowHeight = WindowWidth / curResizeRatio;
