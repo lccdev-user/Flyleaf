@@ -26,17 +26,20 @@ internal sealed class D3DImageSurface : IDisposable
     IDirect3DTexture9 d9Texture;
     IDirect3DSurface9 d9Surface;
 
-    Player  player;
-    int     width, height;
-    bool    d9Ready;
+    Player player;
+    int imageWidth, imageHeight;
+    int controlWidth, controlHeight;
+    bool d9Ready;
 
-    public void Initialize(Player player, int width, int height, nint focusHwnd)
+    public void Initialize(Player player, int imageWidth, int imageHeight, int controlWidth, int controlHeight, nint focusHwnd)
     {
         this.player = player;
-        this.width  = width;
-        this.height = height;
+        this.imageWidth = imageWidth;
+        this.imageHeight = imageHeight;
+        this.controlWidth = controlWidth;
+        this.controlHeight = controlHeight;
 
-        Console.WriteLine($"[D9S] Initialize  {width}x{height} hwnd=0x{focusHwnd:X}");
+        Console.WriteLine($"[D9S] Initialize  image={imageWidth}x{imageHeight} control={controlWidth}x{controlHeight} hwnd=0x{focusHwnd:X}");
         CreateD3D9Device(focusHwnd);
         Console.WriteLine("[D9S] D3D9 device created");
         SetupSharedTexture();
@@ -137,12 +140,12 @@ internal sealed class D3DImageSurface : IDisposable
 
     void SetupSharedTexture()
     {
-        player.Renderer.SwapChain.SetupD3DImage(width, height, OnHandleUpdated, OnPresented);
+        player.Renderer.SwapChain.SetupD3DImage(imageWidth, imageHeight, controlWidth, controlHeight, OnHandleUpdated, OnPresented);
     }
 
     void OnHandleUpdated(nint sharedHandle)
     {
-        Console.WriteLine($"[D9S] OnHandleUpdated  handle=0x{sharedHandle:X} size={width}x{height}");
+        Console.WriteLine($"[D9S] OnHandleUpdated  handle=0x{sharedHandle:X} size={imageWidth}x{imageHeight}");
 
         // Keep old resources alive until AFTER D3DImage is repointed — disposing them
         // before SetBackBuffer would leave D3DImage pointing at freed GPU memory.
@@ -170,7 +173,7 @@ internal sealed class D3DImageSurface : IDisposable
         try
         {
             d9Texture = d9Device.CreateTexture(
-                (uint)width, (uint)height, 1,
+                (uint)imageWidth, (uint)imageHeight, 1,
                 D9Usage.RenderTarget, D9Format.A8R8G8B8, D9Pool.Default,
                 ref h);
         }
@@ -279,16 +282,24 @@ internal sealed class D3DImageSurface : IDisposable
         });
     }
 
-    public void Resize(int newWidth, int newHeight)
+    public void Resize(int newImageWidth, int newImageHeight, int newControlWidth, int newControlHeight)
     {
-        if (newWidth == width && newHeight == height) return;
-        if (newWidth <= 0 || newHeight <= 0) return;
+        bool imageChanged   = newImageWidth != imageWidth || newImageHeight != imageHeight;
+        bool controlChanged = newControlWidth != controlWidth || newControlHeight != controlHeight;
+        if (!imageChanged && !controlChanged) return;
+        if (newImageWidth <= 0 || newImageHeight <= 0 || newControlWidth <= 0 || newControlHeight <= 0) return;
 
-        width   = newWidth;
-        height  = newHeight;
-        d9Ready = false;
+        imageWidth    = newImageWidth;
+        imageHeight   = newImageHeight;
+        controlWidth  = newControlWidth;
+        controlHeight = newControlHeight;
 
-        player?.Renderer?.SwapChain.ResizeD3DImage(newWidth, newHeight);
+        if (imageChanged)
+        {
+            d9Ready = false;
+        }
+
+        player?.Renderer?.SwapChain.ResizeD3DImage(newImageWidth, newImageHeight, newControlWidth, newControlHeight);
     }
 
     public void Dispose()
