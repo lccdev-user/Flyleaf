@@ -4,6 +4,7 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using FlyleafLib.MediaPlayer;
 using System.Windows.Controls;
+using System.Windows.Input;
 
 namespace FlyleafLib.Controls.WPF;
 
@@ -62,6 +63,7 @@ public class FlyleafView : Decorator, IHostPlayer, IDisposable
         Loaded   += OnLoaded;
         Unloaded += OnUnloaded;
         SizeChanged += OnSizeChanged;
+        MouseWheel += OnMouseWheel;
     }
 
     void OnLoaded(object sender, RoutedEventArgs e)
@@ -177,6 +179,24 @@ public class FlyleafView : Decorator, IHostPlayer, IDisposable
 
         if (_surface != null)
             UpdateSurfaceLayout();
+    }
+
+    private void OnMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        if (!Keyboard.IsKeyDown(Key.LeftCtrl))
+            return;
+
+        var relativeMousePosition = e.GetPosition(this);
+        var center = new Point(relativeMousePosition.X / ActualWidth, relativeMousePosition.Y / ActualHeight);
+        Player.Config.Video.ZoomCenter = center;
+
+        var isZoomIn = e.Delta > 0;
+        if (isZoomIn)
+            Player.Config.Video.ZoomIn();
+        else
+            Player.Config.Video.ZoomOut();
+        Console.WriteLine($"{Player.Config.Video.Zoom} | {Player.Config.Video.ZoomCenter}");
+        Console.WriteLine($"{Player.Renderer.Viewport.Width / ActualWidth}");
     }
 
     #region IHostPlayer
