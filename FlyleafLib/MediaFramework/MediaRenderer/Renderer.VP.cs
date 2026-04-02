@@ -495,7 +495,7 @@ public class VPConfig : NotifyPropertyChanged
     internal bool vflip;
 
     [JsonIgnore]
-    public double           Zoom                    { get => SnapToInt(zoom * 100); set { if (Set(ref zoom, SnapToInt(value / 100))) vp?.VPRequest(VPRequestType.Viewport); } }
+    public double           Zoom                    { get => SnapToInt(zoom * 100); set { if (Set(ref zoom, SnapToInt(vp?.ValidateZoom(value / 100) ?? value / 100))) vp?.VPRequest(VPRequestType.Viewport); } }
     internal double zoom = 1;
 
     [JsonIgnore]
