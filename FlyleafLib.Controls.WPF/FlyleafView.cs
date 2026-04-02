@@ -66,6 +66,9 @@ public class FlyleafView : Decorator, IHostPlayer, IDisposable
         MouseWheel += OnMouseWheel;
     }
 
+    public double DpiX { get; private set; } = 1;
+    public double DpiY { get; private set; } = 1;
+
     void OnLoaded(object sender, RoutedEventArgs e)
     {
         Console.WriteLine($"[FLV] OnLoaded  Player={(Player != null ? "set" : "null")} _surface={(_surface != null ? "set" : "null")} ActualSize={ActualWidth}x{ActualHeight}");
@@ -122,6 +125,12 @@ public class FlyleafView : Decorator, IHostPlayer, IDisposable
 
         var window = Window.GetWindow(this);
         nint hwnd  = window != null ? new WindowInteropHelper(window).EnsureHandle() : IntPtr.Zero;
+        var source = PresentationSource.FromVisual(window);
+        if (source != null)
+        {
+            DpiX = source.CompositionTarget?.TransformToDevice.M11 ?? 1;
+            DpiY = source.CompositionTarget?.TransformToDevice.M22 ?? 1;
+        }
 
         var imageSize = GetImagePixelSize();
         var controlSize = GetControlPixelSize();
@@ -187,14 +196,13 @@ public class FlyleafView : Decorator, IHostPlayer, IDisposable
             return;
 
         var relativeMousePosition = e.GetPosition(this);
-        var center = new Point(relativeMousePosition.X / ActualWidth, relativeMousePosition.Y / ActualHeight);
-        Player.Config.Video.ZoomCenter = center;
+        Point curDpi = new(relativeMousePosition.X * DpiX, relativeMousePosition.Y * DpiY);
 
         var isZoomIn = e.Delta > 0;
         if (isZoomIn)
-            Player.Config.Video.ZoomIn();
+            Player.Config.Video.ZoomIn(curDpi);
         else
-            Player.Config.Video.ZoomOut();
+            Player.Config.Video.ZoomOut(curDpi);
     }
 
     #region IHostPlayer
