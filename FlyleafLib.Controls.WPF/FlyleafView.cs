@@ -195,8 +195,6 @@ public class FlyleafView : Decorator, IHostPlayer, IDisposable
             Player.Config.Video.ZoomIn();
         else
             Player.Config.Video.ZoomOut();
-        Console.WriteLine($"{Player.Config.Video.Zoom} | {Player.Config.Video.ZoomCenter}");
-        Console.WriteLine($"{Player.Renderer.Viewport.Width / ActualWidth}");
     }
 
     #region IHostPlayer
