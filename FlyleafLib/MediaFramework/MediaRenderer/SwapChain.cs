@@ -46,8 +46,8 @@ public unsafe class SwapChain
     int                 controlWidth, controlHeight; // TBR: Updates earlier and waits Resize to update ControlWidth/ControlHeight
     Action<IDXGISwapChain2>
                         WinUIClbk;
-    //Present Error    
-    ID2D1Bitmap1          bitmapErrorMessage;    
+    //Present Error
+    ID2D1Bitmap1          bitmapErrorMessage;
     IDWriteFactory        writeFactory;
     BitmapProperties1     bitmapPropsErrorMessage = new()
     {
@@ -59,6 +59,7 @@ public unsafe class SwapChain
     Action<nint>        d3dImageHandleCallback;
     Action              d3dImagePresentCallback;
     int                 d3dImageWidth, d3dImageHeight;
+    int                 d3dImageControlWidth, d3dImageControlHeight;
 
     bool                isCornerRadiusEmpty = true;
     IVP                 vp;
@@ -211,7 +212,7 @@ public unsafe class SwapChain
         }
     }
 
-    public void SetupD3DImage(int width, int height, Action<nint> handleCallback, Action presentCallback)
+    public void SetupD3DImage(int imageWidth, int imageHeight, int d3dControlWidth, int d3dControlHeight, Action<nint> handleCallback, Action presentCallback)
     {
         lock (Renderer.lockDevice)
         {
@@ -223,10 +224,12 @@ public unsafe class SwapChain
                 DisposeLocal();
             }
 
+            d3dImageWidth          = imageWidth;
+            d3dImageHeight         = imageHeight;
+            d3dImageControlWidth   = d3dControlWidth;
+            d3dImageControlHeight  = d3dControlHeight;
             d3dImageHandleCallback  = handleCallback;
             d3dImagePresentCallback = presentCallback;
-            d3dImageWidth           = width;
-            d3dImageHeight          = height;
 
             if (handleCallback == null)
                 return;
@@ -342,7 +345,7 @@ public unsafe class SwapChain
                 Renderer.textFormat.WordWrapping = WordWrapping.Wrap;
             }
         }
-         
+
         Renderer.ucfg.ResetViewport();
     }
 
@@ -508,13 +511,18 @@ public unsafe class SwapChain
         if (controlWidth != vp.ControlWidth || controlHeight != vp.ControlHeight) // TBR: It will not refresh on restore from minimize (same sizes)
             vp.VPRequest(VPRequestType.Resize);
     }
-    public void ResizeD3DImage(int width, int height)
-    {   // Externally used by FlyleafView when the WPF control is resized
-        d3dImageWidth  = width;
-        d3dImageHeight = height;
+    public void ResizeD3DImage(int imageWidth, int imageHeight, int d3dControlWidth, int d3dControlHeight)
+    {
+        // Externally used by FlyleafView when the WPF control layout changes
+        bool imageChanged = d3dImageWidth != imageWidth || d3dImageHeight != imageHeight;
+        bool controlChanged = d3dImageControlWidth != d3dControlWidth || d3dImageControlHeight != d3dControlHeight;
+        d3dImageWidth = imageWidth;
+        d3dImageHeight = imageHeight;
+        d3dImageControlWidth = d3dControlWidth;
+        d3dImageControlHeight = d3dControlHeight;
 
-        CanPresent = width > 0 && height > 0;
-        if (width != vp.ControlWidth || height != vp.ControlHeight)
+        CanPresent = imageWidth > 0 && imageHeight > 0 && d3dControlWidth > 0 && d3dControlHeight > 0;
+        if (imageChanged || controlChanged || d3dControlWidth != vp.ControlWidth || d3dControlHeight != vp.ControlHeight)
             vp.VPRequest(VPRequestType.Resize);
     }
 
@@ -556,30 +564,38 @@ public unsafe class SwapChain
         // TBR lock with Resize*
         if (d3dImageHandleCallback != null)
         {
-            vp.UpdateSize(d3dImageWidth, d3dImageHeight);
+            int imageWidth = d3dImageWidth;
+            int imageHeight = d3dImageHeight;
 
-            if (bitmap2d != null)
+            vp.UpdateSize(d3dImageControlWidth, d3dImageControlHeight);
+
+            bool recreateBackBuffer = bb == null || bb.Description.Width != (uint)imageWidth || bb.Description.Height != (uint)imageHeight;
+
+            if (recreateBackBuffer && bitmap2d != null)
             {
                 context2d.Target = null;
                 bitmap2d.Dispose();
                 bitmap2d = null;
             }
 
-            bbRtv?.Dispose();
-            bb?.Dispose();
-
-            bb    = CreateD3DImageTexture(d3dImageWidth, d3dImageHeight);
-            bbRtv = Renderer.Device.CreateRenderTargetView(bb);
-
-            if (context2d != null)
+            if (recreateBackBuffer)
             {
-                using var surface = bb.QueryInterface<IDXGISurface>();
-                bitmap2d = context2d.CreateBitmapFromDxgiSurface(surface, bitmapProps2d);
-                context2d.Target = bitmap2d;
-            }
+                bbRtv.Dispose();
+                bb.Dispose();
 
-            using var dxgiResource = bb.QueryInterface<IDXGIResource>();
-            d3dImageHandleCallback(dxgiResource.SharedHandle);
+                bb    = CreateD3DImageTexture(imageWidth, imageHeight);
+                bbRtv = Renderer.Device.CreateRenderTargetView(bb);
+
+                if (context2d != null)
+                {
+                    using var surface = bb.QueryInterface<IDXGISurface>();
+                    bitmap2d = context2d.CreateBitmapFromDxgiSurface(surface, bitmapProps2d);
+                    context2d.Target = bitmap2d;
+                }
+
+                using var dxgiResource = bb.QueryInterface<IDXGIResource>();
+                d3dImageHandleCallback(dxgiResource.SharedHandle);
+            }
 
             return;
         }
@@ -665,7 +681,7 @@ public unsafe class SwapChain
         dcClip.SetBottomLeftRadiusY     ((float)ucfg.cornerRadius.BottomLeft);
         dcClip.SetBottomRightRadiusX    ((float)ucfg.cornerRadius.BottomRight);
         dcClip.SetBottomRightRadiusY    ((float)ucfg.cornerRadius.BottomRight);
-    }    
+    }
     internal void UpdateSharedHandle()
     {
         if (bb == null)
