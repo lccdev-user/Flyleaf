@@ -308,7 +308,7 @@ internal sealed class D3DImageSurface : IDisposable
         if (dispatcher.CheckAccess())
             DetachD3DImage();
         else
-            dispatcher.Invoke(DetachD3DImage);
+            dispatcher.BeginInvoke(DetachD3DImage);
     }
 
     void AttachD3DImage(nint surfacePtr)
