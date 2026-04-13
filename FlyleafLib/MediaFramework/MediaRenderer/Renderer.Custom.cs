@@ -15,6 +15,7 @@ public unsafe partial class Renderer
 
     public event Action? CustomProcessRequests;
     public event Action? CustomSetSize;
+    public event Action<VideoFrame>? UpdateChild;
     public EventHandler<ID2D1DeviceContext>? Overview2DInitialized;
     public EventHandler<ID2D1DeviceContext>? Overview2DDisposing;
     public EventHandler<ID2D1DeviceContext>? Overview2DDraw;

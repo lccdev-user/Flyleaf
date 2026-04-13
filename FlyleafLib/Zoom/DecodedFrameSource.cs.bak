@@ -1,7 +1,6 @@
+using System;
 using FlyleafLib.MediaFramework.MediaDecoder;
 using FlyleafLib.MediaFramework.MediaFrame;
-using FlyleafLib.MediaFramework.MediaRenderer;
-using System;
 using Vortice.Direct3D11;
 using Vortice.DXGI;
 using Vortice.Mathematics;
@@ -29,13 +28,12 @@ namespace FlyleafLib.Zoom
     ///   SW: frame.SRV[0] is BGRA → CopyResource → _convertedTex(own copy)
     /// </summary>
     internal unsafe class DecodedFrameSource : IDisposable
-    {   
+    {
+        // ── Public output ─────────────────────────────────────────────────────
         public ID3D11ShaderResourceView ConvertedSrv { get; private set; }
-        public ID3D11Texture2D ConvertedTex => _convertedTex;
-        public IntPtr SharedTextureHandle { get; private set; }
         public bool HasValidFrame { get; private set; }
 
-        // D3D11
+        // ── D3D11 ─────────────────────────────────────────────────────────────
         private  ID3D11Device          _device;
         private  ID3D11DeviceContext   _context;
         private readonly VideoDecoder          _decoder;
@@ -54,21 +52,16 @@ namespace FlyleafLib.Zoom
 
         private bool _disposed;
 
-        
+        // ─────────────────────────────────────────────────────────────────────
         public DecodedFrameSource(ID3D11Device device, VideoDecoder decoder)
         {
             _device  = device  ?? throw new ArgumentNullException(nameof(device));
-            _decoder = decoder ?? throw new ArgumentNullException(nameof(decoder));            
+            _decoder = decoder ?? throw new ArgumentNullException(nameof(decoder));
             _context = device.ImmediateContext;
 
             // VideoDevice/Context für HW-Konvertierung
             _videoDevice  = device.QueryInterface<ID3D11VideoDevice>();
             _videoContext = _context.QueryInterface<ID3D11VideoContext>();
-
-            lock (_decoder.Renderer.Device)
-            {
-                _decoder.Renderer.UpdateChild += OnFrame;
-            }
         }
 
         
@@ -81,9 +74,7 @@ namespace FlyleafLib.Zoom
         public bool TryUpdate()
         {
             if (_disposed) return false;
-
-            // HW-Frame:  VPIV != null  (FlyleafLib erstellt VPIV für D3D11VP)
-            // SW-Frame:  VPIV == null, SRV[0] = BGRA
+            
             VideoFrame frame = null;
             lock (_decoder.Renderer.Frames)
             {
@@ -97,18 +88,6 @@ namespace FlyleafLib.Zoom
                 else
                     return UpdateSW(frame);
             }
-        }
-
-        public void OnFrame(VideoFrame frame)
-        {
-            if(_disposed || frame == null) return;
-            
-            bool isHW = _decoder.VideoAccelerated && frame.VPIV != null;
-
-            if (isHW)
-                UpdateHW(frame);
-            else
-                UpdateSW(frame);
         }
 
         // ── HW-Pfad: VPIV bereits fertig → VideoProcessorBlt → BGRA ─────────
@@ -127,9 +106,7 @@ namespace FlyleafLib.Zoom
             var stream = new VideoProcessorStream
             {
                 Enable       = true,
-                InputSurface = frame.VPIV,
-                OutputIndex = 0u,
-                InputFrameOrField = 0u
+                InputSurface = frame.VPIV
             };
 
             _videoContext.VideoProcessorBlt(
@@ -197,8 +174,7 @@ namespace FlyleafLib.Zoom
                 Usage             = ResourceUsage.Default,
                 // RenderTarget  : benötigt für VideoProcessorBlt-Output
                 // ShaderResource: für MiniMap-Shader
-                BindFlags         = BindFlags.RenderTarget | BindFlags.ShaderResource,
-                MiscFlags = ResourceOptionFlags.Shared,
+                BindFlags         = BindFlags.RenderTarget | BindFlags.ShaderResource
             });
 
             _convertedW = w;
@@ -262,16 +238,6 @@ namespace FlyleafLib.Zoom
             ConvertedSrv = null;
             if (_convertedTex == null) return;
 
-            try
-            {
-                using var res = _convertedTex.QueryInterface<IDXGIResource1>();
-                IntPtr handle = res.SharedHandle;
-
-                SharedTextureHandle = handle;
-                
-            }
-            catch { /* silently skip if not D3D11.1 */ }
-            /*
             ConvertedSrv = _device.CreateShaderResourceView(_convertedTex,
                 new ShaderResourceViewDescription
                 {
@@ -279,7 +245,6 @@ namespace FlyleafLib.Zoom
                     ViewDimension = Vortice.Direct3D.ShaderResourceViewDimension.Texture2D,
                     Texture2D     = new Texture2DShaderResourceView { MipLevels = 1 }
                 });
-            */
         }
 
         // ── IDisposable ───────────────────────────────────────────────────────
@@ -287,10 +252,7 @@ namespace FlyleafLib.Zoom
         {
             if (_disposed) return;
             _disposed = true;
-            lock (_decoder.Renderer.Device)
-            {
-                _decoder.Renderer.UpdateChild -= OnFrame;
-            }
+
             _vpOutputView?.Dispose();
             _videoProcessor?.Dispose();
             _vpEnum?.Dispose();

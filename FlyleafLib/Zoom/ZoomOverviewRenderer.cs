@@ -40,6 +40,11 @@ namespace FlyleafLib.Zoom
         public int  ControlWidth     { get; private set; }
         public int  ControlHeight    { get; private set; }
 
+        // Shared source: main renderer's back buffer
+        private ID3D11Texture2D          _sharedTex;
+        private ID3D11ShaderResourceView _sharedSrv;
+        private IntPtr                   _lastHandle = IntPtr.Zero;
+
         // ── D3D11 Pipeline ────────────────────────────────────────────────────
         private ID3D11Device          _device;
         private ID3D11DeviceContext   _context;
@@ -56,15 +61,6 @@ namespace FlyleafLib.Zoom
         private bool                  _disposed;
         internal LogHandler Log;
 
-        // ── cbuffer (32 bytes) ────────────────────────────────────────────────
-        [StructLayout(LayoutKind.Sequential, Size = 32)]
-        private struct CbViewport
-        {
-            public float ViewX, ViewY, ViewW, ViewH;
-            public float MapW, MapH;
-            public float _pad0, _pad1;
-        }
-
         // ── HLSL ─────────────────────────────────────────────────────────────
         // Vertex Shader: Full-Screen-Triangle ohne Vertex-Buffer
         private const string VSSrc = @"
@@ -77,39 +73,14 @@ VSOut main(uint id:SV_VertexID)
 }";
 
         // Pixel Shader:
-        //   src = DecodedFrameSource.ConvertedSrv (BGRA, ungezoomt)
-        //   viewRect = aktueller Zoom-Viewport im UV-Raum [0..1]
-        //   Außerhalb des Viewports: 40% gedimmt
-        //   Viewport-Rahmen: Amber-Highlight (2.5 px)
+        //   src = DecodedFrameSource.ConvertedSrv (BGRA, ungezoomt)        
         private const string PSSrc = @"
 Texture2D    src : register(t0);
 SamplerState sam : register(s0);
-cbuffer CB : register(b0)
-{
-    float4 viewRect;   // x y w h in UV [0..1]
-    float2 mapSize;
-    float2 _pad;
-};
 struct PSIn { float4 pos:SV_POSITION; float2 uv:TEXCOORD0; };
 float4 main(PSIn i) : SV_TARGET
-{
-    float4 c  = src.Sample(sam, i.uv);
-    float2 uv = i.uv;
-
-    bool inV = uv.x >= viewRect.x && uv.x <= (viewRect.x + viewRect.z)
-            && uv.y >= viewRect.y && uv.y <= (viewRect.y + viewRect.w);
-
-    float bw = 2.5 / mapSize.x;
-    float bh = 2.5 / mapSize.y;
-    bool border = inV && (uv.x < viewRect.x + bw
-                       || uv.x > viewRect.x + viewRect.z - bw
-                       || uv.y < viewRect.y + bh
-                       || uv.y > viewRect.y + viewRect.w - bh);
-
-    float3 res = border ? float3(1.0, 0.85, 0.15)   // Amber-Rahmen
-               : inV   ? c.rgb                       // sichtbarer Bereich
-                        : c.rgb * 0.40;              // außerhalb
-    return float4(res, 1.0);
+{  
+    return src.Sample(sam, i.uv);
 }";
 
         // ────────────────────────────────────────────────────────────────────
@@ -118,6 +89,10 @@ float4 main(PSIn i) : SV_TARGET
             _player    = player ?? throw new ArgumentNullException(nameof(player));
             ControlWidth  = miniWidth;
             ControlHeight = miniHeight;
+
+            if (_frameSource is null)
+                _frameSource = new DecodedFrameSource(_player.Renderer.Device, _player.VideoDecoder);
+
 
             var uniqueId =  GetUniqueId();
             Log = new(("[#" + uniqueId + "]").PadRight(8, ' ') + " [ZOVRenderer    ] ");
@@ -136,11 +111,7 @@ float4 main(PSIn i) : SV_TARGET
                 return;
             _context = _device.ImmediateContext;
 
-            // DecodedFrameSource kapselt HW/SW Frame-Konvertierung
-            //_frameSource = new DecodedFrameSource(_device, _player.VideoDecoder);
-
             CompileShaders();
-            CreateConstantBuffer();
             CreateSamplerAndStates();
 
             IsInitialized = true;
@@ -157,27 +128,31 @@ float4 main(PSIn i) : SV_TARGET
             _device = renderTarget.Device;
             _context = _device.ImmediateContext;
             
-            if (_frameSource is null)
-                _frameSource = new DecodedFrameSource(_device, _player.VideoDecoder);
-
+            
             ///_context = args.Device.ImmediateContext;
 
             // ── Neuesten dekodierten Frame holen und konvertieren ─────────────
             // TryUpdate: NV12 (HW) oder BGRA (SW) → _frameSource.ConvertedSrv
-            bool hasFrame = _frameSource.TryUpdate();
+            // bool hasFrame = _frameSource.TryUpdate();
 
             // Ersten Frame abwarten
-            if (!hasFrame && !_frameSource.HasValidFrame) return;
+            // if (!hasFrame && !_frameSource.HasValidFrame) return;
 
+            /*
             var srv = _frameSource.ConvertedSrv;
             if (srv == null) return;
+            */
+            IntPtr handle = _frameSource.SharedTextureHandle;
+
+            OpenSharedIfNeeded(handle, args.Device);
+            if (_sharedSrv == null)
+                return;
 
             // ── In DrawingSurface-Target rendern ─────────────────────────────
             using var rtv    = _device.CreateRenderTargetView(renderTarget);
             var descTarget   = renderTarget.Description;
             var viewport     = new Viewport(0, 0, descTarget.Width, descTarget.Height, 0f, 1f);
 
-            UpdateConstantBuffer();
             Log.Debug($"viewport : {viewport}");
             _context.RSSetViewports(new[] { viewport });
             _context.RSSetState(_rasterizer);
@@ -187,39 +162,13 @@ float4 main(PSIn i) : SV_TARGET
 
             _context.VSSetShader(_vs);
             _context.PSSetShader(_ps);
-            _context.PSSetShaderResource(0, srv);
+            _context.PSSetShaderResource(0, _sharedSrv);
             _context.PSSetSampler(0, _sampler);
-            _context.PSSetConstantBuffer(0, _cbViewport);
             _context.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
             _context.Draw(3, 0);
 
             _context.OMSetRenderTargets((ID3D11RenderTargetView)null);
             _context.PSSetShaderResource(0, null);
-        }
-
-        // ── cbuffer: Viewport-Rect aus Zoom/Pan ──────────────────────────────
-        private void UpdateConstantBuffer()
-        {   
-            var cfg    = _player.Config.Video;
-            float zoom = Math.Min(0.01f, (float)cfg.Zoom);
-            float panX = 0.0F; // (float)cfg.PanXOffset;
-            float panY = 0.0F; // (float)cfg.PanYOffset;
-
-            float w = 1f; // / zoom;
-            float h = 1f; // / zoom;
-            float x = Math.Clamp(0.5f + panX * 0.5f - w * 0.5f, 0f, 1f - w);
-            float y = Math.Clamp(0.5f + panY * 0.5f - h * 0.5f, 0f, 1f - h);
-
-            var cb = new CbViewport
-            {
-                ViewX = x, ViewY = y, ViewW = w, ViewH = h,
-                MapW  = ControlWidth, MapH = ControlHeight
-            };
-            Log.Debug($"cbViewPort : {cb}, zoom {zoom}, panX {panX}, panY {panY}");
-            var mapped = _context.Map(_cbViewport, 0, MapMode.WriteDiscard, Vortice.Direct3D11.MapFlags.None);
-            Marshal.StructureToPtr(cb, mapped.DataPointer, false);
-            _context.Unmap(_cbViewport, 0);
-            
         }
 
         // ── Pipeline-Setup ───────────────────────────────────────────────────
@@ -231,18 +180,6 @@ float4 main(PSIn i) : SV_TARGET
             var psBlob = Compiler.Compile(PSSrc, "main", "ps", "ps_5_0");
             _ps = _device.CreatePixelShader(psBlob.Span);
         }
-
-        private void CreateConstantBuffer()
-        {
-            _cbViewport = _device.CreateBuffer(new BufferDescription
-            {
-                ByteWidth = (uint)Marshal.SizeOf<CbViewport>(),
-                Usage          = ResourceUsage.Dynamic,
-                BindFlags      = BindFlags.ConstantBuffer,
-                CPUAccessFlags = CpuAccessFlags.Write
-            });
-        }
-
         private void CreateSamplerAndStates()
         {
             _sampler = _device.CreateSamplerState(new SamplerDescription
@@ -256,6 +193,41 @@ float4 main(PSIn i) : SV_TARGET
             _blend      = _device.CreateBlendState(BlendDescription.Opaque);
         }
 
+        // ── Shared texture management ────────────────────────────────────────
+        private void OpenSharedIfNeeded(IntPtr handle, ID3D11Device device)
+        {
+            if (handle == _lastHandle)
+                return;
+
+            _sharedSrv?.Dispose();
+            _sharedSrv = null;
+            _sharedTex?.Dispose();
+            _sharedTex = null;
+
+            try
+            {
+                // Nur für NT_SHARED_HANDLE
+                // using var dev1 = _device.QueryInterface<ID3D11Device1>();
+                // _sharedTex = dev1.OpenSharedResource1<ID3D11Texture2D>(handle);
+                _sharedTex = device.OpenSharedResource<ID3D11Texture2D>(handle);
+                Log.Debug($"_sharedTex {_sharedTex.Description.Width}x{_sharedTex.Description.Height}");
+                _sharedSrv = device.CreateShaderResourceView(_sharedTex,
+                    new ShaderResourceViewDescription
+                    {
+                        Format = _sharedTex.Description.Format,
+                        ViewDimension = ShaderResourceViewDimension.Texture2D,
+                        Texture2D = new Texture2DShaderResourceView { MipLevels = 1 }
+                    });
+
+                _lastHandle = handle;
+            }
+            catch (Exception ex)
+            {
+                Log.Error($"[ZoomOverview] OpenSharedResource1 failed: {ex.Message}");
+            }
+        }
+
+
         // ── IDisposable ──────────────────────────────────────────────────────
         public void Dispose()
         {
@@ -263,7 +235,6 @@ float4 main(PSIn i) : SV_TARGET
             _disposed = true;
 
             _frameSource?.Dispose();
-            _cbViewport?.Dispose();
             _sampler?.Dispose();
             _rasterizer?.Dispose();
             _blend?.Dispose();
