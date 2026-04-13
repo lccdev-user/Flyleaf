@@ -1,11 +1,11 @@
-﻿using System.Runtime.InteropServices;
+﻿using FlyleafLib.Custom;
+using System.Runtime.InteropServices;
 using System.Windows.Data;
 
 using static FlyleafLib.Config;
 
 using FlyleafLib.MediaFramework.MediaProgram;
 using FlyleafLib.MediaFramework.MediaStream;
-using FlyleafLib.Custom;
 
 namespace FlyleafLib.MediaFramework.MediaDemuxer;
 
@@ -1204,20 +1204,22 @@ public unsafe class Demuxer : RunThreadBase
                     UpdateHLSTime();
 
                 if (this.IsCustomStreamLive())
+                {
                     this.UpdateCustomDuration();
 
-                long fps = this.CustomFramePerSecond();
-                if (fps > 0)
-                {
-                    var stream = AVStreamToStream[packet->stream_index];
-                    long frameDuration = 1_000_000 / fps ;
-                    long frameTime = this.CurCustomTime(VideoTimeUnit.Microseconds);
+                    long fps = this.CustomFramePerSecond();
+                    if (fps > 0)
+                    {
+                        var stream = AVStreamToStream[packet->stream_index];
+                        long frameDuration = 1_000_000 / fps ;
+                        long frameTime = this.CurCustomTime(VideoTimeUnit.Microseconds);
 
-                    packet->pts = (long)(frameTime / stream.Timebase);
-                    packet->duration = frameDuration;
-                    packet->dts = AV_NOPTS_VALUE;
+                        packet->pts = (long)(frameTime / stream.Timebase);
+                        packet->duration = frameDuration;
+                        packet->dts = AV_NOPTS_VALUE;
 
-                    Log.Debug($"[vls-video] duration {frameDuration}, time {frameTime}  | frm/s: {fps} | frmDur: {Utils.TicksToTime(frameDuration * 10)}, time {Utils.TicksToTime(frameTime * 10)}, pts {packet->pts}, timeBase {stream.Timebase}");
+                        Log.Debug($"[vls-video] duration {frameDuration}, time {frameTime}  | frm/s: {fps} | frmDur: {Utils.TicksToTime(frameDuration * 10)}, time {Utils.TicksToTime(frameTime * 10)}, pts {packet->pts}, timeBase {stream.Timebase}");
+                    }
                 }
 
                 if (CanTrace)

@@ -3,6 +3,8 @@ using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Media;
 using FlyleafLib.MediaPlayer;
+using System.Windows.Controls;
+using System.Windows.Input;
 
 namespace FlyleafLib.Controls.WPF;
 
@@ -11,7 +13,7 @@ namespace FlyleafLib.Controls.WPF;
 /// WPF visual tree via D3DImage, avoiding the Win32 airspace limitation of
 /// <see cref="FlyleafLib.Controls.WPF.FlyleafHost"/>.
 /// </summary>
-public class FlyleafView : FrameworkElement, IHostPlayer, IDisposable
+public class FlyleafView : Decorator, IHostPlayer, IDisposable
 {
     static readonly Type _flType   = typeof(FlyleafView);
     static readonly Type _playerType = typeof(Player);
@@ -60,13 +62,26 @@ public class FlyleafView : FrameworkElement, IHostPlayer, IDisposable
     {
         Loaded   += OnLoaded;
         Unloaded += OnUnloaded;
+        SizeChanged += OnSizeChanged;
+        MouseWheel += OnMouseWheel;
     }
+
+    public double DpiX { get; private set; } = 1;
+    public double DpiY { get; private set; } = 1;
 
     void OnLoaded(object sender, RoutedEventArgs e)
     {
         Console.WriteLine($"[FLV] OnLoaded  Player={(Player != null ? "set" : "null")} _surface={(_surface != null ? "set" : "null")} ActualSize={ActualWidth}x{ActualHeight}");
         if (Player != null && _surface == null)
             InitSurface();
+    }
+
+    void OnSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (_surface == null)
+            return;
+
+        UpdateSurfaceLayout();
     }
 
     void OnUnloaded(object sender, RoutedEventArgs e)
@@ -110,16 +125,21 @@ public class FlyleafView : FrameworkElement, IHostPlayer, IDisposable
 
         var window = Window.GetWindow(this);
         nint hwnd  = window != null ? new WindowInteropHelper(window).EnsureHandle() : IntPtr.Zero;
+        var source = PresentationSource.FromVisual(window);
+        if (source != null)
+        {
+            DpiX = source.CompositionTarget?.TransformToDevice.M11 ?? 1;
+            DpiY = source.CompositionTarget?.TransformToDevice.M22 ?? 1;
+        }
 
-        var dpi  = VisualTreeHelper.GetDpi(this);
-        int pixW = Math.Max(1, (int)(ActualWidth  * dpi.DpiScaleX));
-        int pixH = Math.Max(1, (int)(ActualHeight * dpi.DpiScaleY));
+        var imageSize = GetImagePixelSize();
+        var controlSize = GetControlPixelSize();
 
-        Console.WriteLine($"[FLV] InitSurface  pixW={pixW} pixH={pixH} hwnd=0x{hwnd:X} dpi={dpi.DpiScaleX:F2}");
+        Console.WriteLine($"[FLV] InitSurface  image={imageSize.Width}x{imageSize.Height} control={controlSize.Width}x{controlSize.Height} hwnd=0x{hwnd:X}");
 
         _surface = new D3DImageSurface();
         _surface.D3DImage.IsFrontBufferAvailableChanged += OnIsFrontBufferAvailableChanged;
-        _surface.Initialize(Player, pixW, pixH, hwnd);
+        _surface.Initialize(Player, imageSize.Width, imageSize.Height, controlSize.Width, controlSize.Height, hwnd);
 
         Console.WriteLine($"[FLV] InitSurface  surface ready — IsFrontBufferAvailable={_surface.D3DImage.IsFrontBufferAvailable} PixelSize={_surface.D3DImage.PixelWidth}x{_surface.D3DImage.PixelHeight}");
 
@@ -166,14 +186,23 @@ public class FlyleafView : FrameworkElement, IHostPlayer, IDisposable
     {
         base.OnRenderSizeChanged(sizeInfo);
 
-        if (_surface == null) return;
+        if (_surface != null)
+            UpdateSurfaceLayout();
+    }
 
-        var dpi  = VisualTreeHelper.GetDpi(this);
-        int pixW = Math.Max(1, (int)(sizeInfo.NewSize.Width  * dpi.DpiScaleX));
-        int pixH = Math.Max(1, (int)(sizeInfo.NewSize.Height * dpi.DpiScaleY));
+    private void OnMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        if (!Keyboard.IsKeyDown(Key.LeftCtrl))
+            return;
 
-        _surface.Resize(pixW, pixH);
-        InvalidateVisual();
+        var relativeMousePosition = e.GetPosition(this);
+        Point curDpi = new(relativeMousePosition.X * DpiX, relativeMousePosition.Y * DpiY);
+
+        var isZoomIn = e.Delta > 0;
+        if (isZoomIn)
+            Player.Config.Video.ZoomIn(curDpi);
+        else
+            Player.Config.Video.ZoomOut(curDpi);
     }
 
     #region IHostPlayer
@@ -224,4 +253,31 @@ public class FlyleafView : FrameworkElement, IHostPlayer, IDisposable
             p.Host = null;
         }
     }
+
+    void UpdateSurfaceLayout()
+    {
+        var imageSize = GetImagePixelSize();
+        var controlSize = GetControlPixelSize();
+
+        _surface.Resize(imageSize.Width, imageSize.Height, controlSize.Width, controlSize.Height);
+        InvalidateVisual();
+    }
+
+    Int32Size GetImagePixelSize()
+    {
+        var dpi = VisualTreeHelper.GetDpi(this);
+        return new(
+            Math.Max(1, (int)Math.Round(ActualWidth * dpi.DpiScaleX)),
+            Math.Max(1, (int)Math.Round(ActualHeight * dpi.DpiScaleY)));
+    }
+
+    Int32Size GetControlPixelSize()
+    {
+        var dpi = VisualTreeHelper.GetDpi(this);
+        return new(
+            Math.Max(1, (int)Math.Round(RenderSize.Width * dpi.DpiScaleX)),
+            Math.Max(1, (int)Math.Round(RenderSize.Height * dpi.DpiScaleY)));
+    }
+
+    readonly record struct Int32Size(int Width, int Height);
 }

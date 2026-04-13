@@ -189,6 +189,9 @@ public class Audio : NotifyPropertyChanged
         };
 
         Volume = Config.Audio.VolumeMax / 2;
+
+        if (Engine.Audio.Failed || Engine.Config.DisableAudio)
+            Config.Audio.SetEnabled(false);
     }
 
     internal void Initialize()
@@ -261,6 +264,9 @@ public class Audio : NotifyPropertyChanged
     {
         lock (locker) // required for submittedSamples only? (ClearBuffer() can be called during audio decocder circular buffer reallocation)
         {
+            if (sourceVoice == null)
+                return;
+
             try
             {
                 if (CanTrace)
@@ -284,7 +290,16 @@ public class Audio : NotifyPropertyChanged
             }
         }
     }
-    internal long GetBufferedDuration() { lock (locker) { return (long) ((submittedSamples - sourceVoice.State.SamplesPlayed) * Timebase); } }
+    internal long GetBufferedDuration()
+    {
+        lock (locker)
+        {
+            if (sourceVoice == null)
+                return 0;
+
+            return (long)((submittedSamples - sourceVoice.State.SamplesPlayed) * Timebase);
+        }
+    }
     internal long GetDeviceDelay()
     {
         /* TODO
@@ -294,6 +309,9 @@ public class Audio : NotifyPropertyChanged
          */
         lock (locker)
         {
+            if (xaudio2 == null)
+                return 0;
+
             var latency = (long) ((xaudio2.PerformanceData.CurrentLatencyInSamples * Timebase) - 8_0000);
             if (latency > TimeSpan.FromMilliseconds(500).Ticks)
             {
@@ -302,7 +320,7 @@ public class Audio : NotifyPropertyChanged
                 #endif
                 return TimeSpan.FromMilliseconds(40).Ticks;
             }
-            
+
             return latency;
         }
     }
@@ -336,6 +354,12 @@ public class Audio : NotifyPropertyChanged
     }
     internal void Refresh(bool fromCodec = false)
     {
+        if (Engine.Audio.Failed || Engine.Config.DisableAudio || !Config.Audio.Enabled)
+        {
+            Reset();
+            return;
+        }
+
         if (decoder.AudioStream == null)
         {
             Reset();
@@ -365,7 +389,7 @@ public class Audio : NotifyPropertyChanged
             if (sampleRate != curSampleRate)
                 Initialize();
         }
-        
+
         player.UIAdd(uiAction);
     }
     internal void Enable()
