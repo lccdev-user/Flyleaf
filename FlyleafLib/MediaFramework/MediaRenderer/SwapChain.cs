@@ -46,6 +46,8 @@ public unsafe class SwapChain
     int                 controlWidth, controlHeight; // TBR: Updates earlier and waits Resize to update ControlWidth/ControlHeight
     Action<IDXGISwapChain2>
                         WinUIClbk;
+    Action              beforePresentCallbacks;
+
     //Present Error
     ID2D1Bitmap1          bitmapErrorMessage;
     IDWriteFactory        writeFactory;
@@ -54,12 +56,6 @@ public unsafe class SwapChain
         BitmapOptions   = BitmapOptions.Target | BitmapOptions.CannotDraw,
         PixelFormat     = Vortice.DCommon.PixelFormat.Premultiplied
     };
-
-    // D3DImage mode
-    Action<nint>        d3dImageHandleCallback;
-    Action              d3dImagePresentCallback;
-    int                 d3dImageWidth, d3dImageHeight;
-    int                 d3dImageControlWidth, d3dImageControlHeight;
 
     bool                isCornerRadiusEmpty = true;
     IVP                 vp;
@@ -118,9 +114,7 @@ public unsafe class SwapChain
     }
     internal void Setup()
     {
-        if (d3dImageHandleCallback != null)
-            SetupLocalD3DImage();
-        else if (WinUIClbk != null)
+        if (WinUIClbk != null)
             SetupLocalWinUI();
         else if (ControlHwnd != 0)
             SetupLocal();
@@ -190,6 +184,22 @@ public unsafe class SwapChain
                 SetupLocalWinUI();
         }
     }
+    public void RegisterBeforePresentCallback(Action callback)
+    {
+        if (callback == null)
+            return;
+
+        lock (Renderer.lockDevice)
+            beforePresentCallbacks += callback;
+    }
+    public void UnregisterBeforePresentCallback(Action callback)
+    {
+        if (callback == null)
+            return;
+
+        lock (Renderer.lockDevice)
+            beforePresentCallbacks -= callback;
+    }
     internal void SetupLocalWinUI()
     {
         try
@@ -211,86 +221,46 @@ public unsafe class SwapChain
             return;
         }
     }
-
-    public void SetupD3DImage(int imageWidth, int imageHeight, int d3dControlWidth, int d3dControlHeight, Action<nint> handleCallback, Action presentCallback)
+    void NotifyBeforePresent()
     {
+        var callbacks = beforePresentCallbacks;
+        if (callbacks == null)
+            return;
+
+        foreach (Action callback in callbacks.GetInvocationList())
+        {
+            try
+            {
+                callback();
+            }
+            catch (Exception e)
+            {
+                Log.Error($"SC before-present callback failed ({e.Message})");
+            }
+        }
+    }
+    public bool CopyBackBufferTo(ID3D11Texture2D target)
+    {
+        if (target == null)
+            return false;
+
         lock (Renderer.lockDevice)
         {
-            if (!Disposed)
-            {
-                if (d3dImageHandleCallback == handleCallback)
-                    return;
+            if (Disposed || bb == null)
+                return false;
 
-                DisposeLocal();
-            }
+            var sourceDesc = bb.Description;
+            var targetDesc = target.Description;
+            if (sourceDesc.Width != targetDesc.Width || sourceDesc.Height != targetDesc.Height || sourceDesc.Format != targetDesc.Format)
+                return false;
 
-            d3dImageWidth          = imageWidth;
-            d3dImageHeight         = imageHeight;
-            d3dImageControlWidth   = d3dControlWidth;
-            d3dImageControlHeight  = d3dControlHeight;
-            d3dImageHandleCallback  = handleCallback;
-            d3dImagePresentCallback = presentCallback;
-
-            if (handleCallback == null)
-                return;
-
-            if (Renderer.Disposed)
-                Renderer.SetupLocal();
-            else
-                SetupLocalD3DImage();
+            var context = Renderer.Device.ImmediateContext;
+            context.CopyResource(target, bb);
+            context.Flush();
+            return true;
         }
     }
-    internal void SetupLocalD3DImage()
-    {
-        try
-        {
-            if (CanDebug) Log.Debug($"SC D3DImage Initializing [{d3dImageWidth}x{d3dImageHeight}]");
 
-            Disposed = false;
-
-            bb    = CreateD3DImageTexture(d3dImageWidth, d3dImageHeight);
-            bbRtv = Renderer.Device.CreateRenderTargetView(bb);
-
-            context2d = Renderer.context2d;
-            if (context2d != null)
-            {
-                using var surface = bb.QueryInterface<IDXGISurface>();
-                bitmap2d = context2d.CreateBitmapFromDxgiSurface(surface, bitmapProps2d);
-                context2d.Target = bitmap2d;
-            }
-
-            using var dxgiResource = bb.QueryInterface<IDXGIResource>();
-            nint sharedHandle = dxgiResource.SharedHandle;
-
-            Log.Debug($"[SC]  SetupLocalD3DImage  sharedHandle=0x{sharedHandle:X} size={d3dImageWidth}x{d3dImageHeight}");
-            d3dImageHandleCallback(sharedHandle);
-
-            CanPresent = d3dImageWidth > 0 && d3dImageHeight > 0;
-            vp.VPRequest(VPRequestType.Resize);
-
-            if (CanInfo) Log.Info($"SC D3DImage Initialized [{d3dImageWidth}x{d3dImageHeight}]");
-        }
-        catch (Exception e)
-        {
-            Log.Error($"SC D3DImage Initialization failed [{d3dImageWidth}x{d3dImageHeight}] ({e.Message})");
-            DisposeLocalD3DImage();
-        }
-    }
-    ID3D11Texture2D CreateD3DImageTexture(int w, int h)
-    {
-        return Renderer.Device.CreateTexture2D(new Texture2DDescription
-        {
-            Width             = (uint)w,
-            Height            = (uint)h,
-            MipLevels         = 1,
-            ArraySize         = 1,
-            Format            = Format.B8G8R8A8_UNorm,
-            SampleDescription = new SampleDescription(1, 0),
-            Usage             = ResourceUsage.Default,
-            BindFlags         = BindFlags.RenderTarget | BindFlags.ShaderResource,
-            MiscFlags         = ResourceOptionFlags.Shared,
-        });
-    }
     void SetupLocalHelper()
     {
         context2d   = Renderer.context2d;
@@ -378,8 +348,6 @@ public unsafe class SwapChain
             DisposeLocal(rendererFrame);
             ControlHwnd = 0;
             WinUIClbk = null;
-            d3dImageHandleCallback  = null;
-            d3dImagePresentCallback = null;
         }
     }
     internal void DisposeLocal(bool rendererFrame = true)
@@ -392,12 +360,6 @@ public unsafe class SwapChain
             Renderer.ClearScreen(force: true, rendererFrame: rendererFrame);
             Disposed = true;
             CanPresent = false;
-
-            if (d3dImageHandleCallback != null)
-            {
-                DisposeLocalD3DImage();
-                return;
-            }
 
             if (WinUIClbk != null)
             {
@@ -465,16 +427,6 @@ public unsafe class SwapChain
 
         if (CanInfo) Log.Info($"SC Disposed [Hwnd: {ControlHwnd}]");
     }
-    void DisposeLocalD3DImage()
-    {
-        if (CanDebug) Log.Debug($"SC D3DImage Disposing");
-
-        d3dImageHandleCallback(nint.Zero);
-
-        DisposeHelper();
-
-        if (CanInfo) Log.Info($"SC D3DImage Disposed");
-    }
     void DisposeHelper()
     {
         if (bitmap2d != null)
@@ -511,50 +463,18 @@ public unsafe class SwapChain
         if (controlWidth != vp.ControlWidth || controlHeight != vp.ControlHeight) // TBR: It will not refresh on restore from minimize (same sizes)
             vp.VPRequest(VPRequestType.Resize);
     }
-    public void ResizeD3DImage(int imageWidth, int imageHeight, int d3dControlWidth, int d3dControlHeight)
-    {
-        // Externally used by FlyleafView when the WPF control layout changes
-        bool imageChanged = d3dImageWidth != imageWidth || d3dImageHeight != imageHeight;
-        bool controlChanged = d3dImageControlWidth != d3dControlWidth || d3dImageControlHeight != d3dControlHeight;
-        d3dImageWidth = imageWidth;
-        d3dImageHeight = imageHeight;
-        d3dImageControlWidth = d3dControlWidth;
-        d3dImageControlHeight = d3dControlHeight;
 
-        CanPresent = imageWidth > 0 && imageHeight > 0 && d3dControlWidth > 0 && d3dControlHeight > 0;
-        if (imageChanged || controlChanged || d3dControlWidth != vp.ControlWidth || d3dControlHeight != vp.ControlHeight)
-            vp.VPRequest(VPRequestType.Resize);
-    }
-
-    int _d3dPresentCount1, _d3dPresentCount2;
     public Result Present()
     {
         Log.Debug($"[SC] Present, controlWidth {controlWidth}, controlHeight {controlHeight}, hwnd {ControlHwnd}");
-        UpdateSharedHandle();
-
-        if (d3dImagePresentCallback != null)
-        {
-            int n = System.Threading.Interlocked.Increment(ref _d3dPresentCount1);
-            if (n <= 5 || n % 60 == 0)
-                Console.WriteLine($"[SC]  Present(1-arg) #{n} → d3dImagePresentCallback");
-            d3dImagePresentCallback();
-            return Result.Ok;
-        }
+        NotifyBeforePresent();
         return sc.Present(ucfg.VSync, PresentFlags.None);
     }
 
     public Result Present(uint syncInterval, PresentFlags flags)
     {
         Log.Debug($"[SC] Present (2-arg), controlWidth {controlWidth}, controlHeight {controlHeight}, hwnd {ControlHwnd}");
-         UpdateSharedHandle();
-        if (d3dImagePresentCallback != null)
-        {
-            int n = System.Threading.Interlocked.Increment(ref _d3dPresentCount2);
-            if (n <= 5 || n % 60 == 0)
-                Console.WriteLine($"[SC]  Present(2-arg) #{n} syncInterval={syncInterval} → d3dImagePresentCallback");
-            d3dImagePresentCallback();
-            return Result.Ok;
-        }
+        NotifyBeforePresent();
         return sc.Present(syncInterval, flags);
     }
 
@@ -562,43 +482,6 @@ public unsafe class SwapChain
     {
         Log.Debug($"[SC] SetSize, controlWidth {controlWidth}, controlHeight {controlHeight}, hwnd {ControlHwnd}");
         // TBR lock with Resize*
-        if (d3dImageHandleCallback != null)
-        {
-            int imageWidth = d3dImageWidth;
-            int imageHeight = d3dImageHeight;
-
-            vp.UpdateSize(d3dImageControlWidth, d3dImageControlHeight);
-
-            bool recreateBackBuffer = bb == null || bb.Description.Width != (uint)imageWidth || bb.Description.Height != (uint)imageHeight;
-
-            if (recreateBackBuffer && bitmap2d != null)
-            {
-                context2d.Target = null;
-                bitmap2d.Dispose();
-                bitmap2d = null;
-            }
-
-            if (recreateBackBuffer)
-            {
-                bbRtv.Dispose();
-                bb.Dispose();
-
-                bb    = CreateD3DImageTexture(imageWidth, imageHeight);
-                bbRtv = Renderer.Device.CreateRenderTargetView(bb);
-
-                if (context2d != null)
-                {
-                    using var surface = bb.QueryInterface<IDXGISurface>();
-                    bitmap2d = context2d.CreateBitmapFromDxgiSurface(surface, bitmapProps2d);
-                    context2d.Target = bitmap2d;
-                }
-
-                using var dxgiResource = bb.QueryInterface<IDXGIResource>();
-                d3dImageHandleCallback(dxgiResource.SharedHandle);
-            }
-
-            return;
-        }
 
         vp.UpdateSize(controlWidth, controlHeight);
 
