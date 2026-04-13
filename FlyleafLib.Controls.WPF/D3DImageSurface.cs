@@ -77,6 +77,9 @@ internal sealed class D3DImageSurface : IDisposable
     ID3D11Texture2D d3d11Texture;
     IDirect3DTexture9 d9Texture;
     IDirect3DSurface9 d9Surface;
+    ID3D11Texture2D pendingD3D11Texture;
+    IDirect3DTexture9 pendingD9Texture;
+    IDirect3DSurface9 pendingD9Surface;
 
     Player player;
     int imageWidth, imageHeight;
@@ -186,7 +189,7 @@ internal sealed class D3DImageSurface : IDisposable
                 return;
             }
 
-            RecreateBridge(generation);
+            QueueBridgeRecreation(generation);
             player?.Renderer?.SwapChain?.Resize(controlWidth, controlHeight);
         }
         finally
@@ -195,7 +198,7 @@ internal sealed class D3DImageSurface : IDisposable
         }
     }
 
-    void RecreateBridge(int generation)
+    void QueueBridgeRecreation(int generation)
     {
         int width = Math.Max(1, controlWidth);
         int height = Math.Max(1, controlHeight);
@@ -211,25 +214,26 @@ internal sealed class D3DImageSurface : IDisposable
             D9Usage.RenderTarget, D9Format.A8R8G8B8, D9Pool.Default,
             ref handle);
         var newD9Surface = newD9Texture.GetSurfaceLevel(0);
-        nint surfacePtr = newD9Surface.NativePointer;
 
-        ID3D11Texture2D oldD3D11Texture;
-        IDirect3DTexture9 oldD9Texture;
-        IDirect3DSurface9 oldD9Surface;
+        ID3D11Texture2D oldPendingD3D11Texture;
+        IDirect3DTexture9 oldPendingD9Texture;
+        IDirect3DSurface9 oldPendingD9Surface;
 
         lock (sync)
         {
-            oldD3D11Texture = d3d11Texture;
-            oldD9Texture = d9Texture;
-            oldD9Surface = d9Surface;
+            oldPendingD3D11Texture = pendingD3D11Texture;
+            oldPendingD9Texture = pendingD9Texture;
+            oldPendingD9Surface = pendingD9Surface;
 
-            d3d11Texture = newD3D11Texture;
-            d9Texture = newD9Texture;
-            d9Surface = newD9Surface;
-            bridgeReady = true;
+            pendingD3D11Texture = newD3D11Texture;
+            pendingD9Texture = newD9Texture;
+            pendingD9Surface = newD9Surface;
         }
 
-        DispatchAttach(generation, surfacePtr, oldD3D11Texture, oldD9Texture, oldD9Surface);
+        if (d9Surface == null)
+            PromotePendingBridge(generation);
+
+        DisposeResources(oldPendingD3D11Texture, oldPendingD9Texture, oldPendingD9Surface);
     }
 
     ID3D11Texture2D CreateSharedTexture(int width, int height)
@@ -276,6 +280,9 @@ internal sealed class D3DImageSurface : IDisposable
         ID3D11Texture2D oldD3D11Texture;
         IDirect3DTexture9 oldD9Texture;
         IDirect3DSurface9 oldD9Surface;
+        ID3D11Texture2D oldPendingD3D11Texture;
+        IDirect3DTexture9 oldPendingD9Texture;
+        IDirect3DSurface9 oldPendingD9Surface;
 
         lock (sync)
         {
@@ -283,13 +290,57 @@ internal sealed class D3DImageSurface : IDisposable
             oldD3D11Texture = d3d11Texture;
             oldD9Texture = d9Texture;
             oldD9Surface = d9Surface;
+            oldPendingD3D11Texture = pendingD3D11Texture;
+            oldPendingD9Texture = pendingD9Texture;
+            oldPendingD9Surface = pendingD9Surface;
             d3d11Texture = null;
             d9Texture = null;
             d9Surface = null;
+            pendingD3D11Texture = null;
+            pendingD9Texture = null;
+            pendingD9Surface = null;
         }
 
         DispatchDetach();
         DisposeResources(oldD3D11Texture, oldD9Texture, oldD9Surface);
+        DisposeResources(oldPendingD3D11Texture, oldPendingD9Texture, oldPendingD9Surface);
+    }
+
+    void PromotePendingBridge(int generation)
+    {
+        nint surfacePtr;
+        ID3D11Texture2D oldD3D11Texture;
+        IDirect3DTexture9 oldD9Texture;
+        IDirect3DSurface9 oldD9Surface;
+        ID3D11Texture2D nextD3D11Texture;
+        IDirect3DTexture9 nextD9Texture;
+        IDirect3DSurface9 nextD9Surface;
+
+        lock (sync)
+        {
+            if (isDisposed || generation != callbackGeneration || pendingD9Surface == null)
+                return;
+
+            oldD3D11Texture = d3d11Texture;
+            oldD9Texture = d9Texture;
+            oldD9Surface = d9Surface;
+
+            nextD3D11Texture = pendingD3D11Texture;
+            nextD9Texture = pendingD9Texture;
+            nextD9Surface = pendingD9Surface;
+
+            pendingD3D11Texture = null;
+            pendingD9Texture = null;
+            pendingD9Surface = null;
+
+            d3d11Texture = nextD3D11Texture;
+            d9Texture = nextD9Texture;
+            d9Surface = nextD9Surface;
+            bridgeReady = true;
+            surfacePtr = nextD9Surface.NativePointer;
+        }
+
+        DispatchAttach(generation, surfacePtr, oldD3D11Texture, oldD9Texture, oldD9Surface);
     }
 
     static void DisposeResources(ID3D11Texture2D d3d11Texture, IDirect3DTexture9 d9Texture, IDirect3DSurface9 d9Surface)
@@ -334,18 +385,39 @@ internal sealed class D3DImageSurface : IDisposable
         if (n <= 5 || n % 60 == 0)
             Console.WriteLine($"[D3DI] OnBeforePresent #{n} ready={bridgeReady}");
 
+        bool requestPresentation = false;
+        int generation;
+
         lock (sync)
         {
             if (isDisposed || !bridgeReady || d3d11Texture == null)
+            {
+                if (pendingD3D11Texture == null)
+                    return;
+            }
+
+            var targetTexture = pendingD3D11Texture ?? d3d11Texture;
+            if (!player.Renderer.SwapChain.CopyBackBufferTo(targetTexture))
                 return;
 
-            if (!player.Renderer.SwapChain.CopyBackBufferTo(d3d11Texture))
-                return;
+            if (pendingD3D11Texture != null)
+            {
+                pendingPresentGeneration = -1;
+            }
+            else
+            {
+                generation = callbackGeneration;
+                System.Threading.Volatile.Write(ref pendingPresentGeneration, generation);
+                requestPresentation = true;
+            }
 
-            System.Threading.Volatile.Write(ref pendingPresentGeneration, callbackGeneration);
+            generation = callbackGeneration;
         }
 
-        D3DImagePresentationPump.Request(this);
+        PromotePendingBridge(generation);
+
+        if (requestPresentation)
+            D3DImagePresentationPump.Request(this);
     }
 
     public void ProcessPendingPresentation()
@@ -388,7 +460,7 @@ internal sealed class D3DImageSurface : IDisposable
         System.Threading.Interlocked.Increment(ref callbackGeneration);
 
         if (!isDisposed && player?.Renderer?.SwapChain != null && !player.Renderer.SwapChain.Disposed)
-            RecreateBridge(callbackGeneration);
+            QueueBridgeRecreation(callbackGeneration);
 
         player?.Renderer?.SwapChain?.Resize(newControlWidth, newControlHeight);
     }

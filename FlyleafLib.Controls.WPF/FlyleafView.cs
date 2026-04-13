@@ -260,7 +260,6 @@ public class FlyleafView : Decorator, IHostPlayer, IDisposable
         var controlSize = GetControlPixelSize();
 
         _surface.Resize(imageSize.Width, imageSize.Height, controlSize.Width, controlSize.Height);
-        InvalidateVisual();
     }
 
     Int32Size GetImagePixelSize()
