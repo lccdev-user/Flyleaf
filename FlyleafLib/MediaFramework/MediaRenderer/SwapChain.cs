@@ -244,21 +244,18 @@ public unsafe class SwapChain
         if (target == null)
             return false;
 
-        lock (Renderer.lockDevice)
-        {
-            if (Disposed || bb == null)
-                return false;
+        if (Disposed || bb == null)
+            return false;
 
-            var sourceDesc = bb.Description;
-            var targetDesc = target.Description;
-            if (sourceDesc.Width != targetDesc.Width || sourceDesc.Height != targetDesc.Height || sourceDesc.Format != targetDesc.Format)
-                return false;
+        var sourceDesc = bb.Description;
+        var targetDesc = target.Description;
+        if (sourceDesc.Width != targetDesc.Width || sourceDesc.Height != targetDesc.Height || sourceDesc.Format != targetDesc.Format)
+            return false;
 
-            var context = Renderer.Device.ImmediateContext;
-            context.CopyResource(target, bb);
-            context.Flush();
-            return true;
-        }
+        var context = Renderer.Device.ImmediateContext;
+        context.CopyResource(target, bb);
+        context.Flush();
+        return true;
     }
 
     void SetupLocalHelper()
