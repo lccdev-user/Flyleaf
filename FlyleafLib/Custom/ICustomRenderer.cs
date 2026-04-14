@@ -3,7 +3,7 @@
 public interface ICustomRenderer
 {
     event Action CustomProcessRequests;
-    event Action CustomSetSize;
+    event Action CustomSetSize;    
     double InitialZoom { get; }
     double MaximalZoom { get; }
     double ValidateZoom(double zoom);
