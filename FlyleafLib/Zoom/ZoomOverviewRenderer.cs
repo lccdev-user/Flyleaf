@@ -14,38 +14,20 @@ using ID3D11Texture2D = Vortice.Direct3D11.ID3D11Texture2D;
 namespace FlyleafLib.Zoom
 {
     /// <summary>
-    /// Zoom-Overview Renderer — V4.
-    ///
-    /// Quelle: Direkt dekodierter Frame aus <c>VideoDecoder.Frames</c>
-    ///   • HW-Frame (D3D11VA): NV12 Texture-Array → D3D11 VideoProcessor → BGRA
-    ///   • SW-Frame           : BGRA Staging-Textur → direkt kopiert
-    ///
-    /// Vorteile gegenüber V3 (PreRenderTexture):
-    ///   ✓ Kein Patch in Renderer.cs / Present() nötig
-    ///   ✓ Kein CopyResource pro Frame im Render-Pfad
-    ///   ✓ Kein KeyedMutex nötig
-    ///   ✓ Immer ungezoomtes Originalbild (Decoder-Output)
-    ///   ✓ Funktioniert unabhängig vom Zoom-Zustand
-    ///
-    /// Einschränkungen:
-    ///   • TryPeek auf Decoder-Queue: kein Dequeuen, kein Timing-Einfluss
-    ///   • NV12→BGRA per D3D11 VideoProcessor (GPU-seitig, kein CPU-Overhead)
-    ///   • Bei sehr alten Treibern ohne VideoProcessor: SW-Fallback via
-    ///     CopyResource wenn Format bereits BGRA ist
+    /// Zoom-Overview Renderer
     /// </summary>
     public sealed class ZoomOverviewRenderer : IDisposable
     {
-        // ── Public ────────────────────────────────────────────────────────────
         public bool IsInitialized { get; private set; }
         public int  ControlWidth     { get; private set; }
         public int  ControlHeight    { get; private set; }
 
-        // Shared source: main renderer's back buffer
+        // Shared source
         private ID3D11Texture2D          _sharedTex;
         private ID3D11ShaderResourceView _sharedSrv;
         private IntPtr                   _lastHandle = IntPtr.Zero;
 
-        // ── D3D11 Pipeline ────────────────────────────────────────────────────
+        // D3D11 Pipeline
         private ID3D11Device          _device;
         private ID3D11DeviceContext   _context;
         private DecodedFrameSource    _frameSource;
@@ -61,8 +43,8 @@ namespace FlyleafLib.Zoom
         private bool                  _disposed;
         internal LogHandler Log;
 
-        // ── HLSL ─────────────────────────────────────────────────────────────
-        // Vertex Shader: Full-Screen-Triangle ohne Vertex-Buffer
+        // HLSL
+        // Vertex Shader: Full-screen triangle without vertex buffer
         private const string VSSrc = @"
 struct VSOut { float4 pos:SV_POSITION; float2 uv:TEXCOORD0; };
 VSOut main(uint id:SV_VertexID)
@@ -72,8 +54,7 @@ VSOut main(uint id:SV_VertexID)
     VSOut o; o.pos=pos; o.uv=uv; return o;
 }";
 
-        // Pixel Shader:
-        //   src = DecodedFrameSource.ConvertedSrv (BGRA, ungezoomt)        
+        // Pixel Shader      
         private const string PSSrc = @"
 Texture2D    src : register(t0);
 SamplerState sam : register(s0);
@@ -83,24 +64,18 @@ float4 main(PSIn i) : SV_TARGET
     return src.Sample(sam, i.uv);
 }";
 
-        // ────────────────────────────────────────────────────────────────────
         public ZoomOverviewRenderer(Player player, int miniWidth = 256, int miniHeight = 144)
         {
             _player    = player ?? throw new ArgumentNullException(nameof(player));
             ControlWidth  = miniWidth;
             ControlHeight = miniHeight;
 
-            if (_frameSource is null)
-                _frameSource = new DecodedFrameSource(_player.Renderer.Device, _player.VideoDecoder);
-
-
             var uniqueId =  GetUniqueId();
             Log = new(("[#" + uniqueId + "]").PadRight(8, ' ') + " [ZOVRenderer    ] ");
         }
 
         /// <summary>
-        /// Initialisiert D3D11-Pipeline und DecodedFrameSource.
-        /// Kein D3DImage, kein Renderer-Patch nötig.
+        /// Initializes D3D11 pipeline and DecodedFrameSource.
         /// </summary>
         public void InitializeWithoutD3DImage(DrawingSurface surface)
         {
@@ -114,13 +89,15 @@ float4 main(PSIn i) : SV_TARGET
             CompileShaders();
             CreateSamplerAndStates();
 
+            if (_frameSource is null)
+                _frameSource = new DecodedFrameSource(_player.Renderer.Device, _player.VideoDecoder);
+
             IsInitialized = true;
         }
 
-        // ── DrawingSurface Render-Callback ───────────────────────────────────
+        // DrawingSurface Render-Callback
         /// <summary>
-        /// Rendert die Minimap in das von DrawingSurface bereitgestellte Target.
-        /// Holt den neuesten dekodierten Frame und zeichnet ihn mit Viewport-Rahmen.
+        /// Renders the frame to the target provided by DrawingSurface.
         /// </summary>
         public void RenderIntoTexture(ID3D11Texture2D renderTarget, DrawEventArgs args)
         {
@@ -128,37 +105,21 @@ float4 main(PSIn i) : SV_TARGET
             _device = renderTarget.Device;
             _context = _device.ImmediateContext;
             
-            
-            ///_context = args.Device.ImmediateContext;
-
-            // ── Neuesten dekodierten Frame holen und konvertieren ─────────────
-            // TryUpdate: NV12 (HW) oder BGRA (SW) → _frameSource.ConvertedSrv
-            // bool hasFrame = _frameSource.TryUpdate();
-
-            // Ersten Frame abwarten
-            // if (!hasFrame && !_frameSource.HasValidFrame) return;
-
-            /*
-            var srv = _frameSource.ConvertedSrv;
-            if (srv == null) return;
-            */
             IntPtr handle = _frameSource.SharedTextureHandle;
 
             OpenSharedIfNeeded(handle, args.Device);
-            if (_sharedSrv == null)
-                return;
+            if (_sharedSrv == null) return;
 
-            // ── In DrawingSurface-Target rendern ─────────────────────────────
+            // In DrawingSurface-Target rendern
             using var rtv    = _device.CreateRenderTargetView(renderTarget);
             var descTarget   = renderTarget.Description;
             var viewport     = new Viewport(0, 0, descTarget.Width, descTarget.Height, 0f, 1f);
 
-            Log.Debug($"viewport : {viewport}");
             _context.RSSetViewports(new[] { viewport });
             _context.RSSetState(_rasterizer);
             _context.OMSetBlendState(_blend);
             _context.OMSetRenderTargets(rtv);
-            _context.ClearRenderTargetView(rtv, new Color4(15f, 64f, 7f, 1f));
+            _context.ClearRenderTargetView(rtv, new Color4(0f, 0f, 0f, 1f));
 
             _context.VSSetShader(_vs);
             _context.PSSetShader(_ps);
@@ -171,7 +132,7 @@ float4 main(PSIn i) : SV_TARGET
             _context.PSSetShaderResource(0, null);
         }
 
-        // ── Pipeline-Setup ───────────────────────────────────────────────────
+        // Pipeline-Setup
         private void CompileShaders()
         {
             var vsBlob = Compiler.Compile(VSSrc, "main", "vs", "vs_5_0");
@@ -193,7 +154,7 @@ float4 main(PSIn i) : SV_TARGET
             _blend      = _device.CreateBlendState(BlendDescription.Opaque);
         }
 
-        // ── Shared texture management ────────────────────────────────────────
+        // Shared texture management
         private void OpenSharedIfNeeded(IntPtr handle, ID3D11Device device)
         {
             if (handle == _lastHandle)
@@ -205,12 +166,8 @@ float4 main(PSIn i) : SV_TARGET
             _sharedTex = null;
 
             try
-            {
-                // Nur für NT_SHARED_HANDLE
-                // using var dev1 = _device.QueryInterface<ID3D11Device1>();
-                // _sharedTex = dev1.OpenSharedResource1<ID3D11Texture2D>(handle);
+            {   
                 _sharedTex = device.OpenSharedResource<ID3D11Texture2D>(handle);
-                Log.Debug($"_sharedTex {_sharedTex.Description.Width}x{_sharedTex.Description.Height}");
                 _sharedSrv = device.CreateShaderResourceView(_sharedTex,
                     new ShaderResourceViewDescription
                     {
@@ -218,21 +175,25 @@ float4 main(PSIn i) : SV_TARGET
                         ViewDimension = ShaderResourceViewDimension.Texture2D,
                         Texture2D = new Texture2DShaderResourceView { MipLevels = 1 }
                     });
-
                 _lastHandle = handle;
             }
             catch (Exception ex)
             {
-                Log.Error($"[ZoomOverview] OpenSharedResource1 failed: {ex.Message}");
+                Log.Error($"[ZoomOverview] OpenSharedResource failed: {ex.Message}");
             }
         }
 
 
-        // ── IDisposable ──────────────────────────────────────────────────────
+        // IDisposable
         public void Dispose()
         {
             if (_disposed) return;
             _disposed = true;
+
+            _sharedSrv?.Dispose();
+            _sharedSrv = null;
+            _sharedTex?.Dispose();
+            _sharedTex = null;
 
             _frameSource?.Dispose();
             _sampler?.Dispose();

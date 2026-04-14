@@ -14,24 +14,10 @@ using ID3D11VideoDevice = Vortice.Direct3D11.ID3D11VideoDevice;
 namespace FlyleafLib.Zoom
 {
     /// <summary>
-    /// Kapselt den Zugriff auf dekodierte Frames aus dem VideoDecoder.
-    ///
-    /// Actual VideoFrame structure:
-    ///   Texture[]  — Planes (kept alive only for SRVs)
-    ///   SRV[]      — ShaderResourceViews for FlyleafVP shaders
-    ///                HW: SRV[0]=Y-Plane, SRV[1]=UV-Plane (NV12)
-    ///                SW: SRV[0]=BGRA (directly usable)
-    ///   VPIV       — ID3D11VideoProcessorInputView (HW: already created)
-    ///   AVFrame*   —  HW only, keeps an extra reference alive
-    ///
-    /// Strategy:
-    ///   HW: frame.VPIV is already finished → VideoProcessorBlt → BGRA _convertedTex
-    ///   SW: frame.SRV[0] is BGRA → CopyResource → _convertedTex(own copy)
+    /// Provides access to decoded frames from the video decoder to the child renderer.
     /// </summary>
     internal unsafe class DecodedFrameSource : IDisposable
     {   
-        public ID3D11ShaderResourceView ConvertedSrv { get; private set; }
-        public ID3D11Texture2D ConvertedTex => _convertedTex;
         public IntPtr SharedTextureHandle { get; private set; }
         public bool HasValidFrame { get; private set; }
 
@@ -40,14 +26,14 @@ namespace FlyleafLib.Zoom
         private  ID3D11DeviceContext   _context;
         private readonly VideoDecoder          _decoder;
 
-        // VideoProcessor (HW-Pfad)
+        // Video Processor (HW path)
         private ID3D11VideoDevice              _videoDevice;
         private ID3D11VideoContext             _videoContext;
         private ID3D11VideoProcessorEnumerator _vpEnum;
         private ID3D11VideoProcessor           _videoProcessor;
         private ID3D11VideoProcessorOutputView _vpOutputView;
 
-        // BGRA Ziel-Textur
+        // BGRA Target texture
         private ID3D11Texture2D  _convertedTex;
         private int              _convertedW, _convertedH;
         private bool             _vpReady;
@@ -61,45 +47,18 @@ namespace FlyleafLib.Zoom
             _decoder = decoder ?? throw new ArgumentNullException(nameof(decoder));            
             _context = device.ImmediateContext;
 
-            // VideoDevice/Context für HW-Konvertierung
-            _videoDevice  = device.QueryInterface<ID3D11VideoDevice>();
+            // VideoDevice/Context for HW conversion
+            _videoDevice = device.QueryInterface<ID3D11VideoDevice>();
             _videoContext = _context.QueryInterface<ID3D11VideoContext>();
 
-            lock (_decoder.Renderer.Device)
+            if (decoder.Renderer is not Renderer)
+                return;
+            lock (device)
             {
-                _decoder.Renderer.UpdateChild += OnFrame;
+                _decoder.Renderer.RenderChild += OnRenderFrame;
             }
         }
-
-        
-        // ── Hauptmethode: Frame aktualisieren ─────────────────────────────────
-        /// <summary>
-        /// Versucht den neuesten dekodierten Frame abzurufen und in
-        /// <see cref="ConvertedTexture"/> (BGRA) zu konvertieren.
-        /// Gibt <c>true</c> zurück wenn ein neuer Frame verfügbar war.
-        /// </summary>
-        public bool TryUpdate()
-        {
-            if (_disposed) return false;
-
-            // HW-Frame:  VPIV != null  (FlyleafLib erstellt VPIV für D3D11VP)
-            // SW-Frame:  VPIV == null, SRV[0] = BGRA
-            VideoFrame frame = null;
-            lock (_decoder.Renderer.Frames)
-            {
-                frame = _decoder.Renderer.Frames.Current;
-                if (frame == null ) return false;
-
-                bool isHW = _decoder.VideoAccelerated && frame.VPIV != null;
-
-                if (isHW)
-                    return UpdateHW(frame);
-                else
-                    return UpdateSW(frame);
-            }
-        }
-
-        public void OnFrame(VideoFrame frame)
+        public void OnRenderFrame(VideoFrame frame)
         {
             if(_disposed || frame == null) return;
             
@@ -111,10 +70,10 @@ namespace FlyleafLib.Zoom
                 UpdateSW(frame);
         }
 
-        // ── HW-Pfad: VPIV bereits fertig → VideoProcessorBlt → BGRA ─────────
+        // Hardware path: VPIV already finished → VideoProcessorBlt → BGRA
         private bool UpdateHW(VideoFrame frame)
         {
-            // Coded-Auflösung aus dem VideoStream
+            // Coded resolution from the video stream
             int w = (int)(_decoder.VideoStream?.Width  ?? 0);
             int h = (int)(_decoder.VideoStream?.Height ?? 0);
             if (w == 0 || h == 0) return false;
@@ -122,14 +81,10 @@ namespace FlyleafLib.Zoom
             EnsureConvertedTex(w, h);
             if (!EnsureVideoProcessor(w, h)) return false;
 
-            // frame.VPIV ist die von FlyleafLib erstellte InputView —
-            // kein eigenes Erstellen nötig, kein subresourceIndex nötig.
             var stream = new VideoProcessorStream
             {
                 Enable       = true,
-                InputSurface = frame.VPIV,
-                OutputIndex = 0u,
-                InputFrameOrField = 0u
+                InputSurface = frame.VPIV
             };
 
             _videoContext.VideoProcessorBlt(
@@ -140,14 +95,14 @@ namespace FlyleafLib.Zoom
             return true;
         }
 
-        // ── SW-Pfad: SRV[0] ist BGRA → CopyResource in eigene Textur ─────────
+        // SW path: SRV[0] is BGRA → CopyResource to own texture
         private bool UpdateSW(VideoFrame frame)
         {
             if (frame.SRV == null || frame.SRV.Length == 0 || frame.SRV[0] == null)
                 return false;
 
-            // Textur aus SRV[0] extrahieren
-            var resource = frame.SRV[0].Resource;         //.GetResource(out var resource);
+            // Extract texture from SRV[0]
+            var resource = frame.SRV[0].Resource;
             if (resource == null) return false;
 
             using (resource)
@@ -159,7 +114,7 @@ namespace FlyleafLib.Zoom
                 {
                     var desc = srcTex.Description;
 
-                    // Sicherstellen dass Format BGRA ist (SW-Frames in FlyleafLib)
+                    // Ensure that the format is BGRA (SW frames in FlyleafLib)
                     if (desc.Format != Format.B8G8R8A8_UNorm
                         && desc.Format != Format.B8G8R8A8_UNorm_SRgb)
                         return false;
@@ -176,12 +131,11 @@ namespace FlyleafLib.Zoom
             return true;
         }
 
-        // ── BGRA Ziel-Textur sicherstellen ────────────────────────────────────
+        // Ensure BGRA target texture
         private void EnsureConvertedTex(int w, int h)
         {
             if (_convertedTex != null && _convertedW == w && _convertedH == h) return;
 
-            ConvertedSrv?.Dispose();    ConvertedSrv    = null;
             _vpOutputView?.Dispose();   _vpOutputView   = null;
             _convertedTex?.Dispose();   _convertedTex   = null;
             _vpReady = false;
@@ -195,9 +149,9 @@ namespace FlyleafLib.Zoom
                 Format            = Format.B8G8R8A8_UNorm,
                 SampleDescription = new SampleDescription(1, 0),
                 Usage             = ResourceUsage.Default,
-                // RenderTarget  : benötigt für VideoProcessorBlt-Output
-                // ShaderResource: für MiniMap-Shader
-                BindFlags         = BindFlags.RenderTarget | BindFlags.ShaderResource,
+                // RenderTarget: required for VideoProcessorBlt output
+                // ShaderResource: for Overview-Shader
+                BindFlags = BindFlags.RenderTarget | BindFlags.ShaderResource,
                 MiscFlags = ResourceOptionFlags.Shared,
             });
 
@@ -205,7 +159,7 @@ namespace FlyleafLib.Zoom
             _convertedH = h;
         }
 
-        // ── D3D11 VideoProcessor aufbauen ─────────────────────────────────────
+        // Setting up the D3D11 Video Processor
         private bool EnsureVideoProcessor(int outW, int outH)
         {
             if (_vpReady && _vpOutputView != null) return true;
@@ -215,9 +169,9 @@ namespace FlyleafLib.Zoom
             _vpEnum?.Dispose();         _vpEnum         = null;
             _vpReady = false;
 
-            // Content-Beschreibung: Input-Größe = Output-Größe (keine Skalierung)
-            // FlyleafLib hat den VideoProcessor bereits für die korrekte Größe
-            // konfiguriert. Wir müssen dieselbe Größe verwenden.
+            // Content description: Input size = Output size (no scaling)
+            // FlyleafLib has already configured the VideoProcessor for the correct size.
+            // We need to use the same size.
             var contentDesc = new VideoProcessorContentDescription
             {
                 Usage            = VideoUsage.PlaybackNormal,
@@ -240,7 +194,7 @@ namespace FlyleafLib.Zoom
 
             if (_convertedTex == null) return false;
 
-            // OutputView auf _convertedTex (BGRA)
+            // OutputView on _convertedTex (BGRA)
             var ovDesc = new VideoProcessorOutputViewDescription
             {
                 ViewDimension = VideoProcessorOutputViewDimension.Texture2D,
@@ -255,11 +209,9 @@ namespace FlyleafLib.Zoom
             return true;
         }
 
-        // ── SRV auf _convertedTex aktualisieren ───────────────────────────────
+        // Update SRV to _convertedTex
         private void RefreshSrv()
-        {
-            ConvertedSrv?.Dispose();
-            ConvertedSrv = null;
+        {   
             if (_convertedTex == null) return;
 
             try
@@ -271,32 +223,34 @@ namespace FlyleafLib.Zoom
                 
             }
             catch { /* silently skip if not D3D11.1 */ }
-            /*
-            ConvertedSrv = _device.CreateShaderResourceView(_convertedTex,
-                new ShaderResourceViewDescription
-                {
-                    Format        = Format.B8G8R8A8_UNorm,
-                    ViewDimension = Vortice.Direct3D.ShaderResourceViewDimension.Texture2D,
-                    Texture2D     = new Texture2DShaderResourceView { MipLevels = 1 }
-                });
-            */
         }
+        private void DisposeLocal()
+        {
+            if (_decoder is null || _decoder?.Renderer is not Renderer) return;
 
-        // ── IDisposable ───────────────────────────────────────────────────────
+            try
+            {
+                lock (_device)
+                {
+                    _decoder.Renderer.RenderChild -= OnRenderFrame;
+                }
+                
+            }
+            catch { }
+        }
+        // IDisposable
         public void Dispose()
         {
             if (_disposed) return;
             _disposed = true;
-            lock (_decoder.Renderer.Device)
-            {
-                _decoder.Renderer.UpdateChild -= OnFrame;
-            }
+
+            DisposeLocal();
+
             _vpOutputView?.Dispose();
             _videoProcessor?.Dispose();
             _vpEnum?.Dispose();
             _videoContext?.Dispose();
             _videoDevice?.Dispose();
-            ConvertedSrv?.Dispose();
             _convertedTex?.Dispose();
         }
     }

@@ -104,7 +104,7 @@ public unsafe partial class Renderer
                     else
                         if (Frames.RendererFrame != null)
                         {
-                            D3Render(Frames.RendererFrame, false); needsClear = false; UpdateChild?.Invoke(Frames.RendererFrame);
+                            D3Render(Frames.RendererFrame, false); needsClear = false; RenderChild?.Invoke(Frames.RendererFrame);
                         }
                 }
                 else
@@ -118,7 +118,7 @@ public unsafe partial class Renderer
                         ShowErrorScreen();
                     else
                         if (Frames.RendererFrame != null)
-                        { FLRender(Frames.RendererFrame); needsClear = false; UpdateChild?.Invoke(Frames.RendererFrame); }
+                        { FLRender(Frames.RendererFrame); needsClear = false; RenderChild?.Invoke(Frames.RendererFrame); }
                 }
 
                 CustomProcessRequests?.Invoke();
