@@ -1,5 +1,6 @@
 ﻿using FlyleafLib.MediaPlayer;
 using FlyleafLib.Zoom;
+using System.ComponentModel;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -22,215 +23,250 @@ namespace FlyleafLib.Controls.WPF;
 ///       Margin="0,0,16,16" Panel.ZIndex="10" />
 ///
 ///   // Code-behind nach Player-Open:
-///   Minimap.Initialize(player);
+///   Minimap.BindPlayer(player);
 /// </summary>
 public sealed class ZoomOverlayControl : FrameworkElement, IDisposable
 {
-    // Dependency Properties
-    public static readonly DependencyProperty MiniWidthProperty =
-            DependencyProperty.Register(nameof(MiniWidth), typeof(int),
-                typeof(ZoomOverlayControl), new FrameworkPropertyMetadata(256,
-                    FrameworkPropertyMetadataOptions.AffectsMeasure,
-                    OnSizeChanged));
+	// Dependency Properties
+	public static readonly DependencyProperty MiniWidthProperty =
+			DependencyProperty.Register(nameof(MiniWidth), typeof(int),
+				typeof(ZoomOverlayControl), new FrameworkPropertyMetadata(256,
+					FrameworkPropertyMetadataOptions.AffectsMeasure,
+					OnSizeChanged));
 
-    public static readonly DependencyProperty MiniHeightProperty =
-            DependencyProperty.Register(nameof(MiniHeight), typeof(int),
-                typeof(ZoomOverlayControl), new FrameworkPropertyMetadata(144,
-                    FrameworkPropertyMetadataOptions.AffectsMeasure,
-                    OnSizeChanged));
+	public static readonly DependencyProperty MiniHeightProperty =
+			DependencyProperty.Register(nameof(MiniHeight), typeof(int),
+				typeof(ZoomOverlayControl), new FrameworkPropertyMetadata(144,
+					FrameworkPropertyMetadataOptions.AffectsMeasure,
+					OnSizeChanged));
 
-    public static readonly DependencyProperty ShowWhenZoom1Property =
-            DependencyProperty.Register(nameof(ShowWhenZoom1), typeof(bool),
-                typeof(ZoomOverlayControl), new PropertyMetadata(false));
+	public static readonly DependencyProperty ShowWhenZoom1Property =
+			DependencyProperty.Register(nameof(ShowWhenZoom1), typeof(bool),
+				typeof(ZoomOverlayControl), new PropertyMetadata(false));
 
-    public int MiniWidth { get => (int)GetValue(MiniWidthProperty); set => SetValue(MiniWidthProperty, value); }
-    public int MiniHeight { get => (int)GetValue(MiniHeightProperty); set => SetValue(MiniHeightProperty, value); }
-    public bool ShowWhenZoom1 { get => (bool)GetValue(ShowWhenZoom1Property); set => SetValue(ShowWhenZoom1Property, value); }
+	public int MiniWidth { get => (int)GetValue(MiniWidthProperty); set => SetValue(MiniWidthProperty, value); }
+	public int MiniHeight { get => (int)GetValue(MiniHeightProperty); set => SetValue(MiniHeightProperty, value); }
+	public bool ShowWhenZoom1 { get => (bool)GetValue(ShowWhenZoom1Property); set => SetValue(ShowWhenZoom1Property, value); }
 
-    // ── Internal state ───────────────────────────────────────────────────
-    private DrawingSurface        _surface;           // Vortice.Wpf control
-    private ZoomOverviewRenderer  _renderer;
-    private Player                _player;
-    private bool                  _initialized;
-    private bool                  _disposed;
+	// ── Internal state ───────────────────────────────────────────────────
+	private DrawingSurface        _surface;           // Vortice.Wpf control
+	private ZoomOverviewRenderer  _renderer;
+	private Player                _player;
+	private bool                  _initialized;
+	private bool                  _disposed;
+	private bool                  _needSurfaceCleaning;
 
-    // Click-to-pan drag state
-    private bool  _isDragging;
+	// Click-to-pan drag state
+	private bool  _isDragging;
 
-    //  Constructor
-    public ZoomOverlayControl()
-    {
-        // Create the DrawingSurface child — it owns ALL D3D9/D3DImage work
-        _surface = new DrawingSurface();
-        _surface.Draw += OnDrawingSurfaceRender;
+	//  Constructor
+	public ZoomOverlayControl()
+	{
+		// Create the DrawingSurface child — it owns ALL D3D9/D3DImage work
+		_surface = new DrawingSurface();
+		_surface.Draw += OnDrawingSurfaceRender;
 
-        AddVisualChild(_surface);
+		AddVisualChild(_surface);
 
-        // Mouse interaction
-        _surface.MouseLeftButtonDown += OnMouseDown;
-        _surface.MouseLeftButtonUp += OnMouseUp;
-        _surface.MouseMove += OnMouseMove;
+		// Mouse interaction
+		_surface.MouseLeftButtonDown += OnMouseDown;
+		_surface.MouseLeftButtonUp += OnMouseUp;
+		_surface.MouseMove += OnMouseMove;
 
-        // Clip to bounds (rounded corners done via a clip geometry)
-        ClipToBounds = true;
-    }
+		// Clip to bounds (rounded corners done via a clip geometry)
+		ClipToBounds = true;
+	}
 
-    // Public API
+	// Public API
 
-    /// <summary>
-    /// Verbindet das Control mit einem FlyleafLib Player.
-    /// Muss auf dem UI-Thread aufgerufen werden.
-    /// </summary>
-    public void Initialize(Player player)
-    {
-        if (_initialized || _disposed)
-            return;
-        _player = player ?? throw new ArgumentNullException(nameof(player));
+	/// <summary>
+	/// Verbindet das Control mit einem FlyleafLib Player.
+	/// Muss auf dem UI-Thread aufgerufen werden.
+	/// </summary>
+	public void BindPlayer(Player player)
+	{
+		if (_initialized || _disposed)
+			return;
+		_player = player ?? throw new ArgumentNullException(nameof(player));
 
-        // ZoomOverviewRenderer bekommt jetzt KEIN D3DImage mehr —
-        // das Render-Target kommt direkt von DrawingSurface.OnRender.
-        _renderer = new ZoomOverviewRenderer(player, MiniWidth, MiniHeight);
-        _renderer.InitializeWithoutD3DImage(_surface);   // neue, vereinfachte Init-Variante
+		// ZoomOverviewRenderer bekommt jetzt KEIN D3DImage mehr —
+		// das Render-Target kommt direkt von DrawingSurface.OnRender.
+		_renderer = new ZoomOverviewRenderer(player, MiniWidth, MiniHeight);
+		_renderer.InitializeWithoutD3DImage(_surface);   // neue, vereinfachte Init-Variante
 
-        // Update-Trigger
+		// Update-Trigger
 
-        // 1) Jeder WPF-Compositing-Frame
-        CompositionTarget.Rendering += OnCompositionRendering;
+		// 1) Jeder WPF-Compositing-Frame
+		CompositionTarget.Rendering += OnCompositionRendering;
 
-        // 2) Direkter Trigger bei Zoom/Pan-Änderungen
-        player.Config.Video.PropertyChanged += (_, e) =>
-        {
-            if (e.PropertyName is nameof(player.Config.Video.Zoom)
-                               or nameof(player.Config.Video.PanXOffset)
-                               or nameof(player.Config.Video.PanYOffset))
-            {
-                UpdateVisibility();
-                RequestRender();
-            }
-        };
+		// 2) Direkter Trigger bei Zoom/Pan-Änderungen
+		player.Config.Video.PropertyChanged += ZoomOverviewPropertyChanged;
 
-        UpdateVisibility();
-        _initialized = true;
-    }
+		UpdateVisibility();
+		_initialized = true;
+	}
 
-    //  DrawingSurface.Draw Callback
-    /// <summary>
-    /// Wird von DrawingSurface aufgerufen, wenn ein neuer Frame benötigt wird.
-    /// <paramref name="args"/>.RenderTarget ist die von Vortice.Wpf verwaltete
-    /// ID3D11Texture2D — wir rendern direkt hinein.
-    /// </summary>
-    private void OnDrawingSurfaceRender(object sender, DrawEventArgs args)
-    {
-        if (!_initialized || _disposed || _renderer == null)
-            return;
+	/// <summary>
+	/// Deaktiviert die Verbindung zwischen dem FlyleafLib-Player und dem Control.
+	/// Muss auf dem UI-Thread aufgerufen werden.
+	/// </summary>
+	public void UnbindPlayer()
+	{
+		if (!_initialized || _disposed)
+			return;
 
-        // DrawEventArgs.Surface.ColorTexture        → ID3D11Texture2D des Vortice.Wpf-Targets
-        // DrawEventArgs.Device        → ID3D11Device (kann von Renderer abweichen
-        //                               wenn multi-adapter, daher prüfen)
-        _renderer.RenderIntoTexture(args.Surface.ColorTexture, args);
+		_initialized = false;
+		if (_player is not null)
+			_player.Config.Video.PropertyChanged -= ZoomOverviewPropertyChanged;
+		_player = null;
 
-        // Signal: wir haben in diesen Frame gerendert, WPF soll ihn präsentieren
-        args.InvalidateSurface();
-    }
+		_renderer?.Dispose();
+		_renderer = null;
+		_needSurfaceCleaning = true;
+	}
 
-    // Trigger-Helfer
-    private void OnCompositionRendering(object sender, EventArgs e)
-    {
-        if (!_initialized || _disposed)
-            return;
-        RequestRender();
-    }
+	private void ZoomOverviewPropertyChanged(object sender, PropertyChangedEventArgs e)
+	{
+		if (_player is null || !_initialized || _disposed)
+			return;
 
-    /// <summary>Fordert DrawingSurface auf, OnRender erneut auszuführen.</summary>
-    private void RequestRender()
-    {
-        // DrawingSurface.Invalidate() ist thread-safe und löst einen
-        // weiteren OnRender-Aufruf beim nächsten Compositing-Tick aus.
-        _surface.Invalidate();
-    }
+		if (e.PropertyName is nameof(_player.Config.Video.Zoom)
+							   or nameof(_player.Config.Video.PanXOffset)
+							   or nameof(_player.Config.Video.PanYOffset))
+		{
+			UpdateVisibility();
+			RequestRender();
+		}
+	}
 
-    //  Visibility
-    private void UpdateVisibility()
-    {
-        if (_player == null)
-            return;
-        bool zoomed = _player.Config.Video.Zoom > 100;
-        Visibility = (zoomed || ShowWhenZoom1) ? Visibility.Visible : Visibility.Collapsed;
-    }
+	//  DrawingSurface.Draw Callback
+	/// <summary>
+	/// Wird von DrawingSurface aufgerufen, wenn ein neuer Frame benötigt wird.
+	/// <paramref name="args"/>.RenderTarget ist die von Vortice.Wpf verwaltete
+	/// ID3D11Texture2D — wir rendern direkt hinein.
+	/// </summary>
+	private void OnDrawingSurfaceRender(object sender, DrawEventArgs args)
+	{
+		if (_needSurfaceCleaning && !_disposed)
+			ClearSurface(args);
+		if (!_initialized || _disposed || _renderer == null)
+			return;
 
-    //  DependencyProperty Callback
-    private static void OnSizeChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
-    {
-        var ctrl = (ZoomOverlayControl)d;
-        ctrl._surface?.InvalidateMeasure();
-        ctrl._renderer?.UpdateSize((int)ctrl.ActualWidth, (int)ctrl.ActualHeight);
-    }
+		// DrawEventArgs.Surface.ColorTexture        → ID3D11Texture2D des Vortice.Wpf-Targets
+		// DrawEventArgs.Device        → ID3D11Device (kann von Renderer abweichen
+		//                               wenn multi-adapter, daher prüfen)
+		_renderer.RenderIntoTexture(args.Surface.ColorTexture, args);
 
-    //  Click-to-pan
-    private void OnMouseDown(object sender, MouseButtonEventArgs e)
-    {
-        if (_player == null)
-            return;
-        _isDragging = true;
-        _surface.CaptureMouse();
-        PanToPosition(e.GetPosition(_surface));
-        e.Handled = true;
-    }
+		// Signal: wir haben in diesen Frame gerendert, WPF soll ihn präsentieren
+		args.InvalidateSurface();
+	}
 
-    private void OnMouseMove(object sender, MouseEventArgs e)
-    {
-        if (!_isDragging || _player == null)
-            return;
-        PanToPosition(e.GetPosition(_surface));
-    }
+	private void ClearSurface(DrawEventArgs args)
+	{
+		args.Context.OMSetRenderTargets(args.Surface.ColorTextureView);
+		args.Context.ClearRenderTargetView(args.Surface.ColorTextureView, new Vortice.Mathematics.Color4(0f, 0f, 0f, 1f));
+		args.Context.Draw(3, 0);
+		_needSurfaceCleaning = false;
+	}
 
-    private void OnMouseUp(object sender, MouseButtonEventArgs e)
-    {
-        _isDragging = false;
-        _surface.ReleaseMouseCapture();
-    }
+	// Trigger-Helfer
+	private void OnCompositionRendering(object sender, EventArgs e)
+	{
+		if (!_initialized || _disposed)
+			return;
+		RequestRender();
+	}
 
-    private void PanToPosition(Point pos)
-    {
-        double u    = Math.Clamp(pos.X / MiniWidth,  0, 1);
-        double v    = Math.Clamp(pos.Y / MiniHeight, 0, 1);
-        double panX = (u - 0.5) * 2.0;
-        double panY = (v - 0.5) * 2.0;
+	/// <summary>Fordert DrawingSurface auf, OnRender erneut auszuführen.</summary>
+	private void RequestRender()
+	{
+		// DrawingSurface.Invalidate() ist thread-safe und löst einen
+		// weiteren OnRender-Aufruf beim nächsten Compositing-Tick aus.
+		_surface.Invalidate();
+	}
 
-        _player.Config.Video.PanXOffset = panX;
-        _player.Config.Video.PanYOffset = panY;
-    }
+	//  Visibility
+	private void UpdateVisibility()
+	{
+		if (_player == null)
+			return;
+		bool zoomed = _player.Config.Video.Zoom > 100;
+		Visibility = (zoomed || ShowWhenZoom1) ? Visibility.Visible : Visibility.Collapsed;
+	}
 
-    //  Visual tree
-    protected override int VisualChildrenCount => 1;
-    protected override Visual GetVisualChild(int index) => _surface;
+	//  DependencyProperty Callback
+	private static void OnSizeChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+	{
+		var ctrl = (ZoomOverlayControl)d;
+		ctrl._surface?.InvalidateMeasure();
+		ctrl._renderer?.UpdateSize((int)ctrl.ActualWidth, (int)ctrl.ActualHeight);
+	}
 
-    protected override Size MeasureOverride(Size availableSize)
-    {
-        var size = new Size(MiniWidth, MiniHeight);
-        _surface.Measure(size);
-        return size;
-    }
+	//  Click-to-pan
+	private void OnMouseDown(object sender, MouseButtonEventArgs e)
+	{
+		if (_player == null)
+			return;
+		_isDragging = true;
+		_surface.CaptureMouse();
+		PanToPosition(e.GetPosition(_surface));
+		e.Handled = true;
+	}
 
-    protected override Size ArrangeOverride(Size finalSize)
-    {
-        _surface.Arrange(new Rect(finalSize));
-        return finalSize;
-    }
+	private void OnMouseMove(object sender, MouseEventArgs e)
+	{
+		if (!_isDragging || _player == null)
+			return;
+		PanToPosition(e.GetPosition(_surface));
+	}
 
-    //  IDisposable
-    public void Dispose()
-    {
-        if (_disposed)
-            return;
-        _disposed = true;
+	private void OnMouseUp(object sender, MouseButtonEventArgs e)
+	{
+		_isDragging = false;
+		_surface.ReleaseMouseCapture();
+	}
 
-        CompositionTarget.Rendering -= OnCompositionRendering;
+	private void PanToPosition(Point pos)
+	{
+		double u    = Math.Clamp(pos.X / MiniWidth,  0, 1);
+		double v    = Math.Clamp(pos.Y / MiniHeight, 0, 1);
+		double panX = (u - 0.5) * 2.0;
+		double panY = (v - 0.5) * 2.0;
 
-        _surface.Draw -= OnDrawingSurfaceRender;
-        // DrawingSurface implementiert IDisposable ab Vortice.Wpf 3.8+
-        (_surface as IDisposable)?.Dispose();
+		_player.Config.Video.PanXOffset = panX;
+		_player.Config.Video.PanYOffset = panY;
+	}
 
-        _renderer?.Dispose();
-    }
+	//  Visual tree
+	protected override int VisualChildrenCount => 1;
+	protected override Visual GetVisualChild(int index) => _surface;
+
+	protected override Size MeasureOverride(Size availableSize)
+	{
+		var size = new Size(MiniWidth, MiniHeight);
+		_surface.Measure(size);
+		return size;
+	}
+
+	protected override Size ArrangeOverride(Size finalSize)
+	{
+		_surface.Arrange(new Rect(finalSize));
+		return finalSize;
+	}
+
+	//  IDisposable
+	public void Dispose()
+	{
+		if (_disposed)
+			return;
+		_disposed = true;
+
+		CompositionTarget.Rendering -= OnCompositionRendering;
+
+		_surface.Draw -= OnDrawingSurfaceRender;
+		// DrawingSurface implementiert IDisposable ab Vortice.Wpf 3.8+
+		(_surface as IDisposable)?.Dispose();
+
+		_renderer?.Dispose();
+	}
 }
