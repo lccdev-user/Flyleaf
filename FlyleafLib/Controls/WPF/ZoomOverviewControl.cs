@@ -44,9 +44,16 @@ public sealed class ZoomOverlayControl : FrameworkElement, IDisposable
 			DependencyProperty.Register(nameof(ShowWhenZoom1), typeof(bool),
 				typeof(ZoomOverlayControl), new PropertyMetadata(false));
 
+    public static readonly DependencyProperty ShowZoomBoxProperty =
+            DependencyProperty.Register(nameof(ShowZoomBox), typeof(bool),
+                typeof(ZoomOverlayControl), new PropertyMetadata(true,
+                    OnShowZoomBoxChanged));
+
 	public int MiniWidth { get => (int)GetValue(MiniWidthProperty); set => SetValue(MiniWidthProperty, value); }
 	public int MiniHeight { get => (int)GetValue(MiniHeightProperty); set => SetValue(MiniHeightProperty, value); }
 	public bool ShowWhenZoom1 { get => (bool)GetValue(ShowWhenZoom1Property); set => SetValue(ShowWhenZoom1Property, value); }
+    public bool ShowZoomBox { get => (bool)GetValue(ShowZoomBoxProperty); set => SetValue(ShowZoomBoxProperty, value);  }
+
 
 	// ── Internal state ───────────────────────────────────────────────────
 	private DrawingSurface        _surface;           // Vortice.Wpf control
@@ -93,7 +100,7 @@ public sealed class ZoomOverlayControl : FrameworkElement, IDisposable
 		// das Render-Target kommt direkt von DrawingSurface.OnRender.
 		_renderer = new ZoomOverviewRenderer(player, MiniWidth, MiniHeight);
 		_renderer.InitializeWithoutD3DImage(_surface);   // neue, vereinfachte Init-Variante
-
+        _renderer.ShowZoomBox = ShowZoomBox;
 		// Update-Trigger
 
 		// 1) Jeder WPF-Compositing-Frame
@@ -201,6 +208,13 @@ public sealed class ZoomOverlayControl : FrameworkElement, IDisposable
 		ctrl._surface?.InvalidateMeasure();
 		ctrl._renderer?.UpdateSize((int)ctrl.ActualWidth, (int)ctrl.ActualHeight);
 	}
+
+    private static void OnShowZoomBoxChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        var ctrl = (ZoomOverlayControl)d;
+        if (ctrl._renderer is not null)
+            ctrl._renderer.ShowZoomBox = (bool)e.NewValue;
+    }
 
 	//  Click-to-pan
 	private void OnMouseDown(object sender, MouseButtonEventArgs e)
