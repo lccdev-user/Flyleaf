@@ -154,7 +154,7 @@ public sealed class ZoomOverlayControl : FrameworkElement, IDisposable
     {
         if (_player == null)
             return;
-        bool zoomed = _player.Config.Video.Zoom > 1.005;
+        bool zoomed = _player.Config.Video.Zoom > 100;
         Visibility = (zoomed || ShowWhenZoom1) ? Visibility.Visible : Visibility.Collapsed;
     }
 
