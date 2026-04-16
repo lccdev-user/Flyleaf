@@ -37,6 +37,7 @@ public sealed class ZoomOverlayControl : FrameworkElement, IDisposable
                 typeof(ZoomOverlayControl), new PropertyMetadata(true,
                     OnShowZoomBoxChanged));
 
+	
 	public bool ShowWhenZoom1 { get => (bool)GetValue(ShowWhenZoom1Property); set => SetValue(ShowWhenZoom1Property, value); }
     public bool ShowZoomBox { get => (bool)GetValue(ShowZoomBoxProperty); set => SetValue(ShowZoomBoxProperty, value);  }
 
@@ -226,8 +227,8 @@ public sealed class ZoomOverlayControl : FrameworkElement, IDisposable
 		double panX = (u - 0.5) * 2.0;
 		double panY = (v - 0.5) * 2.0;
 
-		_player.Config.Video.PanXOffset = panX;
-		_player.Config.Video.PanYOffset = panY;
+		_player.Config.Video.PanXOffset = -panX;
+		_player.Config.Video.PanYOffset = -panY;
 	}
 
     private void OnSizeChanged(object sender, SizeChangedEventArgs e)

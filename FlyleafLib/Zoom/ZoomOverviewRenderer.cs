@@ -274,17 +274,16 @@ float4 main(PSIn i) : SV_TARGET
         private void UpdateConstantBuffer()
         {
             var cfg   = _player.Config.Video;
-            float zoom = Math.Max(0.01f, (float)cfg.Zoom/100.0f);
-            float panX = (float)cfg.PanXOffset;
-            float panY = (float)cfg.PanYOffset;
+            var panX = cfg.panXOffset;
+            var panY = cfg.panYOffset;
 
-            // Wie groß ist der sichtbare Ausschnitt im UV-Raum?
-            float w = 1f / zoom;
-            float h = 1f / zoom;
-            // PanOffset 0 = zentriert; ±1 = ±halbe Bildbreite verschoben
-            float x = Math.Clamp(0.5f + panX * 0.5f - w * 0.5f, 0f, 1f - w);
-            float y = Math.Clamp(0.5f + panY * 0.5f - h * 0.5f, 0f, 1f - h);
-
+            var pViewport = cfg.vp.Viewport;            
+           
+            var x = Math.Clamp(-pViewport.X / pViewport.Width,0f, 1f);
+            var y = Math.Clamp(-pViewport.Y / pViewport.Height, 0f, 1f);
+            var w = cfg.vp.ControlWidth / pViewport.Width;
+            var h = cfg.vp.ControlHeight / pViewport.Height;
+            
             var cb = new CbViewport
             {
                 ViewX = x,
@@ -294,7 +293,6 @@ float4 main(PSIn i) : SV_TARGET
                 MapW  = ControlWidth,
                 MapH  = ControlHeight
             };
-
             var mapped = _context.Map(_cbViewport, 0, MapMode.WriteDiscard, MapFlags.None);
             Marshal.StructureToPtr(cb, mapped.DataPointer, false);
             _context.Unmap(_cbViewport, 0);
