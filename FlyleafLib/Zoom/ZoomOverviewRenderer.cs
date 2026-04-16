@@ -106,7 +106,7 @@ float4 main(PSIn i) : SV_TARGET
                        || uv.y < viewRect.y + bh
                        || uv.y > viewRect.y + viewRect.w - bh);
 
-    float3 res = border ? float3(1.0, 0.85, 0.15)   // Amber-Rahmen
+    float3 res = border ? float3(0.0, 0.56, 0.81)   // Blau-Rahmen
                : inV   ? c.rgb                       // sichtbarer Bereich
                         : c.rgb * 0.40;              // ausgeblendeter Bereich
     return float4(res, 1.0);
