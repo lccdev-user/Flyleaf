@@ -9,13 +9,7 @@ using Vortice.Wpf;
 namespace FlyleafLib.Controls.WPF;
 
 /// <summary>
-/// WPF-Overlay-Control für die Zoom-Minimap.
-///
-/// Basiert auf Vortice.Wpf.DrawingSurface — kein manueller D3D9-Interop,
-/// kein D3DImage, kein P/Invoke. DrawingSurface verwaltet den
-/// D3D9-Shared-Surface intern und liefert per Draw-Callback
-/// eine ID3D11Texture2D als fertiges Render-Target.
-///
+///ZoomOverlayControl - WPF control for the zoom minimap..
 ///
 /// XAML-Verwendung:
 ///   <zoom:ZoomOverlayControl x:Name="Minimap"
@@ -36,14 +30,11 @@ public sealed class ZoomOverlayControl : FrameworkElement, IDisposable
             DependencyProperty.Register(nameof(ShowZoomBox), typeof(bool),
                 typeof(ZoomOverlayControl), new PropertyMetadata(true,
                     OnShowZoomBoxChanged));
-
 	
 	public bool ShowWhenZoom1 { get => (bool)GetValue(ShowWhenZoom1Property); set => SetValue(ShowWhenZoom1Property, value); }
     public bool ShowZoomBox { get => (bool)GetValue(ShowZoomBoxProperty); set => SetValue(ShowZoomBoxProperty, value);  }
 
-
-	// ── Internal state ───────────────────────────────────────────────────
-	private DrawingSurface        _surface;           // Vortice.Wpf control
+	private DrawingSurface        _surface;           
 	private ZoomOverviewRenderer  _renderer;
 	private Player                _player;
 	private bool                  _initialized;
@@ -53,10 +44,8 @@ public sealed class ZoomOverlayControl : FrameworkElement, IDisposable
 	// Click-to-pan drag state
 	private bool  _isDragging;
 
-	//  Constructor
 	public ZoomOverlayControl()
-	{
-		// Create the DrawingSurface child — it owns ALL D3D9/D3DImage work
+	{	
 		_surface = new DrawingSurface();
 		_surface.Draw += OnDrawingSurfaceRender;
 
@@ -71,40 +60,34 @@ public sealed class ZoomOverlayControl : FrameworkElement, IDisposable
 		ClipToBounds = true;
 	}
 
-	// Public API
-
-	/// <summary>
-	/// Verbindet das Control mit einem FlyleafLib Player.
-	/// Muss auf dem UI-Thread aufgerufen werden.
-	/// </summary>
-	public void BindPlayer(Player player)
+    /// <summary>
+    /// Connects the control to a FlyleafLib player.
+    /// Must be called on the UI thread.
+    /// </summary>
+    public void BindPlayer(Player player)
 	{
 		if (_initialized || _disposed)
 			return;
 		_player = player ?? throw new ArgumentNullException(nameof(player));
 
-		// ZoomOverviewRenderer bekommt jetzt KEIN D3DImage mehr —
-		// das Render-Target kommt direkt von DrawingSurface.OnRender.
+		
 		_renderer = new ZoomOverviewRenderer(player, (int)ActualWidth, (int)ActualHeight);
 		_renderer.InitializeWithoutD3DImage(_surface);   // neue, vereinfachte Init-Variante
         _renderer.ShowZoomBox = ShowZoomBox;
 		// Update-Trigger
 
-		// 1) Jeder WPF-Compositing-Frame
 		CompositionTarget.Rendering += OnCompositionRendering;
-
-		// 2) Direkter Trigger bei Zoom/Pan-Änderungen
 		player.Config.Video.PropertyChanged += ZoomOverviewPropertyChanged;
 
 		UpdateVisibility();
 		_initialized = true;
 	}
 
-	/// <summary>
-	/// Deaktiviert die Verbindung zwischen dem FlyleafLib-Player und dem Control.
-	/// Muss auf dem UI-Thread aufgerufen werden.
-	/// </summary>
-	public void UnbindPlayer()
+    /// <summary>
+    /// Disconnects the control from the FlyleafLib player.
+    /// Must be called on the UI thread.
+    /// </summary>
+    public void UnbindPlayer()
 	{
 		if (!_initialized || _disposed)
 			return;
@@ -133,25 +116,19 @@ public sealed class ZoomOverlayControl : FrameworkElement, IDisposable
 		}
 	}
 
-	//  DrawingSurface.Draw Callback
-	/// <summary>
-	/// Wird von DrawingSurface aufgerufen, wenn ein neuer Frame benötigt wird.
-	/// <paramref name="args"/>.RenderTarget ist die von Vortice.Wpf verwaltete
-	/// ID3D11Texture2D — wir rendern direkt hinein.
-	/// </summary>
-	private void OnDrawingSurfaceRender(object sender, DrawEventArgs args)
+    //  DrawingSurface.Draw Callback
+    /// <summary>
+    /// Called by DrawingSurface when a new frame is needed.    
+    /// </summary>
+    private void OnDrawingSurfaceRender(object sender, DrawEventArgs args)
 	{
 		if (_needSurfaceCleaning && !_disposed)
 			ClearSurface(args);
 		if (!_initialized || _disposed || _renderer == null)
 			return;
 
-		// DrawEventArgs.Surface.ColorTexture        → ID3D11Texture2D des Vortice.Wpf-Targets
-		// DrawEventArgs.Device        → ID3D11Device (kann von Renderer abweichen
-		//                               wenn multi-adapter, daher prüfen)
 		_renderer.RenderIntoTexture(args.Surface.ColorTexture, args);
 
-		// Signal: wir haben in diesen Frame gerendert, WPF soll ihn präsentieren
 		args.InvalidateSurface();
 	}
 
@@ -163,20 +140,20 @@ public sealed class ZoomOverlayControl : FrameworkElement, IDisposable
 		_needSurfaceCleaning = false;
 	}
 
-	// Trigger-Helfer
-	private void OnCompositionRendering(object sender, EventArgs e)
+    // Trigger Helper
+    private void OnCompositionRendering(object sender, EventArgs e)
 	{
 		if (!_initialized || _disposed)
 			return;
 		RequestRender();
 	}
 
-	/// <summary>Fordert DrawingSurface auf, OnRender erneut auszuführen.</summary>
-	private void RequestRender()
+    /// <summary>Instructs DrawingSurface to re-execute OnRender.</summary>
+    private void RequestRender()
 	{
-		// DrawingSurface.Invalidate() ist thread-safe und löst einen
-		// weiteren OnRender-Aufruf beim nächsten Compositing-Tick aus.
-		_surface.Invalidate();
+        // DrawingSurface.Invalidate() is thread-safe and triggers
+        // another OnRender call on the next compositing tick.
+        _surface.Invalidate();
 	}
 
 	//  Visibility
@@ -264,7 +241,7 @@ public sealed class ZoomOverlayControl : FrameworkElement, IDisposable
 		CompositionTarget.Rendering -= OnCompositionRendering;
 
 		_surface.Draw -= OnDrawingSurfaceRender;
-		// DrawingSurface implementiert IDisposable ab Vortice.Wpf 3.8+
+		
 		(_surface as IDisposable)?.Dispose();
 
 		_renderer?.Dispose();
