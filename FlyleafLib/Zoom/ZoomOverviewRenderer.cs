@@ -65,8 +65,8 @@ namespace FlyleafLib.Zoom
         [StructLayout(LayoutKind.Sequential, Size = 32)]
         private struct CbViewport
         {
-            public float ViewX, ViewY, ViewW, ViewH;  // UV-Rect des Viewports
-            public float MapW, MapH;                   // Minimap-Pixelgröße
+            public float ViewX, ViewY, ViewW, ViewH;  // UV-Rect of the viewport
+            public float MapW, MapH;                   // Minimap pixel size
             public float _pad0, _pad1;
         }
 
@@ -90,8 +90,8 @@ Texture2D    src : register(t0);
 SamplerState sam : register(s0);
 cbuffer CB : register(b0)
 {
-    float4 viewRect;   // x y w h  in UV [0..1]  — aktueller Zoom-Viewport
-    float2 mapSize;    // Minimap-Pixelgröße für Rahmendicke
+    float4 viewRect;   // x y w h  in UV [0..1]  — current zoom viewport
+    float2 mapSize;    // Minimap pixel size for frame thickness
     float2 _pad;
 };
 struct PSIn { float4 pos:SV_POSITION; float2 uv:TEXCOORD0; };
@@ -110,9 +110,9 @@ float4 main(PSIn i) : SV_TARGET
                        || uv.y < viewRect.y + bh
                        || uv.y > viewRect.y + viewRect.w - bh);
 
-    float3 res = border ? float3(0.0, 0.56, 0.81)   // Blau-Rahmen
-               : inV   ? c.rgb                       // sichtbarer Bereich
-                        : c.rgb * 0.40;              // ausgeblendeter Bereich
+    float3 res = border ? float3(0.0, 0.56, 0.81)   // Blue frame
+               : inV   ? c.rgb                       // visible area
+                        : c.rgb * 0.40;              // hidden area
     return float4(res, 1.0);
 }";
         // Simple Pixel Shader:
@@ -274,7 +274,7 @@ float4 main(PSIn i) : SV_TARGET
             }
         }
 
-        // cbuffer: Viewport-Rect aus Zoom/Pan
+        // cbuffer: Viewport-Rect from Zoom/Pan
         private void UpdateConstantBuffer()
         {
             var cfg   = _player.Config.Video;

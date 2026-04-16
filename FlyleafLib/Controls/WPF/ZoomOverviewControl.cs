@@ -22,8 +22,8 @@ namespace FlyleafLib.Controls.WPF;
 public sealed class ZoomOverlayControl : FrameworkElement, IDisposable
 {
 	// Dependency Properties
-	public static readonly DependencyProperty ShowWhenZoom1Property =
-			DependencyProperty.Register(nameof(ShowWhenZoom1), typeof(bool),
+	public static readonly DependencyProperty ShowWhenZoomOutProperty =
+			DependencyProperty.Register(nameof(ShowWhenZoomOut), typeof(bool),
 				typeof(ZoomOverlayControl), new PropertyMetadata(false));
 
     public static readonly DependencyProperty ShowZoomBoxProperty =
@@ -31,7 +31,7 @@ public sealed class ZoomOverlayControl : FrameworkElement, IDisposable
                 typeof(ZoomOverlayControl), new PropertyMetadata(true,
                     OnShowZoomBoxChanged));
 	
-	public bool ShowWhenZoom1 { get => (bool)GetValue(ShowWhenZoom1Property); set => SetValue(ShowWhenZoom1Property, value); }
+	public bool ShowWhenZoomOut { get => (bool)GetValue(ShowWhenZoomOutProperty); set => SetValue(ShowWhenZoomOutProperty, value); }
     public bool ShowZoomBox { get => (bool)GetValue(ShowZoomBoxProperty); set => SetValue(ShowZoomBoxProperty, value);  }
 
 	private DrawingSurface        _surface;           
@@ -162,7 +162,7 @@ public sealed class ZoomOverlayControl : FrameworkElement, IDisposable
 		if (_player == null)
 			return;
 		bool zoomed = _player.Config.Video.Zoom > 100;
-		Visibility = (zoomed || ShowWhenZoom1) ? Visibility.Visible : Visibility.Collapsed;
+		Visibility = (zoomed || ShowWhenZoomOut) ? Visibility.Visible : Visibility.Collapsed;
 	}
 
 	//  DependencyProperty Callback
