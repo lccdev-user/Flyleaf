@@ -28,18 +28,6 @@ namespace FlyleafLib.Controls.WPF;
 public sealed class ZoomOverlayControl : FrameworkElement, IDisposable
 {
 	// Dependency Properties
-	public static readonly DependencyProperty MiniWidthProperty =
-			DependencyProperty.Register(nameof(MiniWidth), typeof(int),
-				typeof(ZoomOverlayControl), new FrameworkPropertyMetadata(256,
-					FrameworkPropertyMetadataOptions.AffectsMeasure,
-					OnSizeChanged));
-
-	public static readonly DependencyProperty MiniHeightProperty =
-			DependencyProperty.Register(nameof(MiniHeight), typeof(int),
-				typeof(ZoomOverlayControl), new FrameworkPropertyMetadata(144,
-					FrameworkPropertyMetadataOptions.AffectsMeasure,
-					OnSizeChanged));
-
 	public static readonly DependencyProperty ShowWhenZoom1Property =
 			DependencyProperty.Register(nameof(ShowWhenZoom1), typeof(bool),
 				typeof(ZoomOverlayControl), new PropertyMetadata(false));
@@ -49,8 +37,6 @@ public sealed class ZoomOverlayControl : FrameworkElement, IDisposable
                 typeof(ZoomOverlayControl), new PropertyMetadata(true,
                     OnShowZoomBoxChanged));
 
-	public int MiniWidth { get => (int)GetValue(MiniWidthProperty); set => SetValue(MiniWidthProperty, value); }
-	public int MiniHeight { get => (int)GetValue(MiniHeightProperty); set => SetValue(MiniHeightProperty, value); }
 	public bool ShowWhenZoom1 { get => (bool)GetValue(ShowWhenZoom1Property); set => SetValue(ShowWhenZoom1Property, value); }
     public bool ShowZoomBox { get => (bool)GetValue(ShowZoomBoxProperty); set => SetValue(ShowZoomBoxProperty, value);  }
 
@@ -79,7 +65,7 @@ public sealed class ZoomOverlayControl : FrameworkElement, IDisposable
 		_surface.MouseLeftButtonDown += OnMouseDown;
 		_surface.MouseLeftButtonUp += OnMouseUp;
 		_surface.MouseMove += OnMouseMove;
-
+        SizeChanged += OnSizeChanged;
 		// Clip to bounds (rounded corners done via a clip geometry)
 		ClipToBounds = true;
 	}
@@ -98,7 +84,7 @@ public sealed class ZoomOverlayControl : FrameworkElement, IDisposable
 
 		// ZoomOverviewRenderer bekommt jetzt KEIN D3DImage mehr —
 		// das Render-Target kommt direkt von DrawingSurface.OnRender.
-		_renderer = new ZoomOverviewRenderer(player, MiniWidth, MiniHeight);
+		_renderer = new ZoomOverviewRenderer(player, (int)ActualWidth, (int)ActualHeight);
 		_renderer.InitializeWithoutD3DImage(_surface);   // neue, vereinfachte Init-Variante
         _renderer.ShowZoomBox = ShowZoomBox;
 		// Update-Trigger
@@ -202,14 +188,7 @@ public sealed class ZoomOverlayControl : FrameworkElement, IDisposable
 	}
 
 	//  DependencyProperty Callback
-	private static void OnSizeChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
-	{
-		var ctrl = (ZoomOverlayControl)d;
-		ctrl._surface?.InvalidateMeasure();
-		ctrl._renderer?.UpdateSize((int)ctrl.ActualWidth, (int)ctrl.ActualHeight);
-	}
-
-    private static void OnShowZoomBoxChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+	private static void OnShowZoomBoxChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
         var ctrl = (ZoomOverlayControl)d;
         if (ctrl._renderer is not null)
@@ -242,8 +221,8 @@ public sealed class ZoomOverlayControl : FrameworkElement, IDisposable
 
 	private void PanToPosition(Point pos)
 	{
-		double u    = Math.Clamp(pos.X / MiniWidth,  0, 1);
-		double v    = Math.Clamp(pos.Y / MiniHeight, 0, 1);
+		double u    = Math.Clamp(pos.X / ActualWidth,  0, 1);
+		double v    = Math.Clamp(pos.Y / ActualHeight, 0, 1);
 		double panX = (u - 0.5) * 2.0;
 		double panY = (v - 0.5) * 2.0;
 
@@ -251,13 +230,19 @@ public sealed class ZoomOverlayControl : FrameworkElement, IDisposable
 		_player.Config.Video.PanYOffset = panY;
 	}
 
-	//  Visual tree
-	protected override int VisualChildrenCount => 1;
+    private void OnSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        _surface?.InvalidateMeasure();
+        _renderer?.UpdateSize((int)e.NewSize.Width, (int)e.NewSize.Height);
+    }
+
+    //  Visual tree
+    protected override int VisualChildrenCount => 1;
 	protected override Visual GetVisualChild(int index) => _surface;
 
 	protected override Size MeasureOverride(Size availableSize)
 	{
-		var size = new Size(MiniWidth, MiniHeight);
+		var size = new Size(ActualWidth, ActualHeight);
 		_surface.Measure(size);
 		return size;
 	}
