@@ -24,12 +24,17 @@ namespace FlyleafLib.Zoom
         public Viewport Viewport { get; private set; }
         public int  ControlWidth     { get; private set; }
         public int  ControlHeight    { get; private set; }
-        public bool ShowZoomBox { get => _showZoomBox; set { _showZoomBox = value; RecreateShadersAndConstantBuffer(); } }
+        public bool ShowZoomBox
+        {
+            get => _showZoomBox;
+            set {
+                _showZoomBox = value;
+                RecreateShadersAndConstantBuffer();
+            }
+        }
         private bool _showZoomBox;
-        public int SideXPixels => sideXPixels;
-        public int SideYPixels => sideYPixels;
-
-        private int  sideXPixels, sideYPixels;
+        public int SideXPixels { get; private set; }
+        public int SideYPixels { get; private set; }
 
         // Shared source
         private ID3D11Texture2D          _sharedTex;
@@ -41,8 +46,8 @@ namespace FlyleafLib.Zoom
         private ID3D11DeviceContext   _context;
         private DecodedFrameSource    _frameSource;
 
-        private ID3D11VertexShader    _vs;
-        private ID3D11PixelShader     _ps;
+        private ID3D11VertexShader    _vertexShader;
+        private ID3D11PixelShader     _pixelShader;
         private ID3D11Buffer          _cbViewport;
         private ID3D11SamplerState    _sampler;
         private ID3D11RasterizerState _rasterizer;
@@ -52,7 +57,7 @@ namespace FlyleafLib.Zoom
         private bool                  _disposed;
         private int _videoWidth;
         private int _videoHeight;
-        private object _lock = new();
+        private object _lockRecreatedResources = new();
         internal LogHandler Log;
 
 
@@ -79,7 +84,7 @@ VSOut main(uint id:SV_VertexID)
         // Pixel Shader:
         //   - Samples from the PRE-RENDER texture (unzoomed, full image)
         //   - Area outside the current viewport → dimmed by 40%
-        //   - Viewport frame → Amber highlight (2.5 px)
+        //   - Viewport frame → Blau highlight (2.5 px)
         private const string PSSrc = @"
 Texture2D    src : register(t0);
 SamplerState sam : register(s0);
@@ -91,8 +96,7 @@ cbuffer CB : register(b0)
 };
 struct PSIn { float4 pos:SV_POSITION; float2 uv:TEXCOORD0; };
 float4 main(PSIn i) : SV_TARGET
-{
-    // src ist jetzt die PRE-RENDER-Textur — kein Zoom drin
+{   
     float4 c  = src.Sample(sam, i.uv);
     float2 uv = i.uv;
 
@@ -136,7 +140,7 @@ float4 main(PSIn i) : SV_TARGET
         /// <summary>
         /// Initializes D3D11 pipeline and DecodedFrameSource.
         /// </summary>
-        public void InitializeWithoutD3DImage(DrawingSurface surface)
+        public void InitializeD3Resource(DrawingSurface surface)
         {
             if (IsInitialized) return;
 
@@ -178,7 +182,7 @@ float4 main(PSIn i) : SV_TARGET
             {
                 UpdateSize((int)descTarget.Width, (int)descTarget.Height);
             }
-            lock (_lock)
+            lock (_lockRecreatedResources)
             {
                 if (_showZoomBox)
                     UpdateConstantBuffer();
@@ -191,8 +195,8 @@ float4 main(PSIn i) : SV_TARGET
                 _context.OMSetRenderTargets(rtv);
                 _context.ClearRenderTargetView(rtv, new Color4(0f, 0f, 0f, 1f));
 
-                _context.VSSetShader(_vs);
-                _context.PSSetShader(_ps);
+                _context.VSSetShader(_vertexShader);
+                _context.PSSetShader(_pixelShader);
                 _context.PSSetShaderResource(0, _sharedSrv);
                 _context.PSSetSampler(0, _sampler);
 
@@ -211,17 +215,17 @@ float4 main(PSIn i) : SV_TARGET
         private void CompileShaders()
         {
             var vsBlob = Compiler.Compile(VSSrc, "main", "vs", "vs_5_0");
-            _vs = _device.CreateVertexShader(vsBlob.Span);
+            _vertexShader = _device.CreateVertexShader(vsBlob.Span);
 
             if (_showZoomBox)
             {
                 var psBlob = Compiler.Compile(PSSrc, "main", "ps", "ps_5_0");
-                _ps = _device.CreatePixelShader(psBlob.Span);
+                _pixelShader = _device.CreatePixelShader(psBlob.Span);
             }
             else
             {
                 var psBlob = Compiler.Compile(PSSrc, "main", "ps_simple", "ps_5_0");
-                _ps = _device.CreatePixelShader(psBlob.Span);
+                _pixelShader = _device.CreatePixelShader(psBlob.Span);
             }
         }
         private void CreateSamplerAndStates()
@@ -250,22 +254,22 @@ float4 main(PSIn i) : SV_TARGET
 
         private void RecreateShadersAndConstantBuffer()
         {
-            lock (_lock)
+            lock (_lockRecreatedResources)
             {
                 _cbViewport?.Dispose();
-                _ps?.Dispose();
+                _pixelShader?.Dispose();
 
                 if (_showZoomBox)
                 {
                     var psBlob = Compiler.Compile(PSSrc, "main", "ps", "ps_5_0");
-                    _ps = _device.CreatePixelShader(psBlob.Span);
+                    _pixelShader = _device.CreatePixelShader(psBlob.Span);
                     CreateConstantBuffer();
                 }
                 else
                 {
                     _cbViewport = null;
                     var psBlob = Compiler.Compile(PSSrcSimple, "main", "ps", "ps_5_0");
-                    _ps = _device.CreatePixelShader(psBlob.Span);
+                    _pixelShader = _device.CreatePixelShader(psBlob.Span);
                 }
             }
         }
@@ -351,8 +355,8 @@ float4 main(PSIn i) : SV_TARGET
             _rasterizer?.Dispose();
             _cbViewport?.Dispose();
             _blend?.Dispose();
-            _vs?.Dispose();
-            _ps?.Dispose();
+            _vertexShader?.Dispose();
+            _pixelShader?.Dispose();
         }
 
         private void SetViewport(int width, int height)
@@ -364,7 +368,7 @@ float4 main(PSIn i) : SV_TARGET
             var curRatio = (double) _videoWidth / _videoHeight;
             var fillRatio = (double) width/height;
 
-            sideYPixels = sideXPixels = 0;
+            SideYPixels = SideXPixels = 0;
             yPixels = xPixels = 0;
             x = y = 0;
 
@@ -373,19 +377,19 @@ float4 main(PSIn i) : SV_TARGET
                 newWidth = (int)(height * curRatio);
                 newHeight = height;
 
-                sideXPixels = ((int)(width - (height * curRatio))) & ~1;
+                SideXPixels = ((int)(width - (height * curRatio))) & ~1;
 
-                x = sideXPixels / 2;
-                xPixels = newWidth - (width - sideXPixels);
+                x = SideXPixels / 2;
+                xPixels = newWidth - (width - SideXPixels);
             }
             else
             {
                 newWidth = width;
                 newHeight = (int) (width / curRatio);
-                sideYPixels = ((int)(height - (width / curRatio))) & ~1;
+                SideYPixels = ((int)(height - (width / curRatio))) & ~1;
 
-                y = sideYPixels / 2;
-                yPixels = newHeight - (height - sideYPixels);
+                y = SideYPixels / 2;
+                yPixels = newHeight - (height - SideYPixels);
             }
 
             Viewport = new((int)(x - xPixels * 0.5), (int)(y - yPixels * 0.5), newWidth, newHeight);

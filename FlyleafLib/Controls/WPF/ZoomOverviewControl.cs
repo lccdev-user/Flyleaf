@@ -72,7 +72,7 @@ public sealed class ZoomOverlayControl : FrameworkElement, IDisposable
 
 		
 		_renderer = new ZoomOverviewRenderer(player, (int)ActualWidth, (int)ActualHeight);
-		_renderer.InitializeWithoutD3DImage(_surface);   // neue, vereinfachte Init-Variante
+		_renderer.InitializeD3Resource(_surface);   // neue, vereinfachte Init-Variante
         _renderer.ShowZoomBox = ShowZoomBox;
 		// Update-Trigger
 
