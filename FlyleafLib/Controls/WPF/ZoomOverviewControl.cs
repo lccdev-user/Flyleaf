@@ -163,7 +163,7 @@ public sealed class ZoomOverlayControl : FrameworkElement, IDisposable
     {
         var ctrl = (ZoomOverlayControl)d;
         ctrl._surface?.InvalidateMeasure();
-        ctrl._renderer?.UpdateSize((int)ctrl._surface?.ActualWidth, (int)ctrl._surface?.ActualHeight);
+        ctrl._renderer?.UpdateSize((int)ctrl.ActualWidth, (int)ctrl.ActualHeight);
     }
 
     //  Click-to-pan
