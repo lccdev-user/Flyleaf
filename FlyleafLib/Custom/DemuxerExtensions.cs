@@ -1,7 +1,7 @@
 ﻿using FlyleafLib.MediaFramework.MediaDemuxer;
 
 namespace FlyleafLib.Custom;
-
+#nullable enable
 public unsafe static class DemuxerExtensions
 {
     public static bool IsCustomStream(this Demuxer demuxer) => demuxer.CustomIOContext.stream is ICustomVideoStream stream;
@@ -81,3 +81,4 @@ public unsafe static class DemuxerExtensions
             custom.Mode = playMode;
     }
 }
+#nullable disable
