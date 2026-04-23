@@ -12,6 +12,7 @@ using InputElementDescription = Vortice.Direct3D11.InputElementDescription;
 using VRect = Vortice.Mathematics.Rect;
 
 namespace FlyleafLib.MediaFramework.MediaRenderer;
+#pragma warning disable CS8632 // The annotation for nullable reference types may only be used in code within a #nullable annotation context.
 
 public partial class BitmapRenderer : NotifyPropertyChanged, IDisposable
 {
@@ -25,6 +26,7 @@ public partial class BitmapRenderer : NotifyPropertyChanged, IDisposable
     private ID2D1DeviceContext? _d2dContext;
     private ID2D1Bitmap1? _d2dTargetBitmap;
     private ID2D1Bitmap? _d2dSourceBitmap;
+
     private BitmapProperties1 bitmapProps = new()
     {
         BitmapOptions = BitmapOptions.Target | BitmapOptions.CannotDraw,
@@ -299,3 +301,4 @@ public partial class BitmapRenderer : NotifyPropertyChanged, IDisposable
         }
     }
 }
+#pragma warning restore CS8632 // The annotation for nullable reference types may only be used in code within a #nullable annotation context.
