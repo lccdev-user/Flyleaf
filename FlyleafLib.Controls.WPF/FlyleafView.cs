@@ -117,12 +117,12 @@ public class FlyleafView : Decorator, IHostPlayer, IDisposable
         var rect = new Rect(RenderSize);
         if (CanDrawSurface())
         {
-            Console.WriteLine($"[FLV] OnRender  DrawImage D3DImage={surface.D3DImage.PixelWidth}x{surface.D3DImage.PixelHeight} rect={rect.Width:F0}x{rect.Height:F0}");
+            DebugLogger.Print($"[FLV] OnRender  DrawImage D3DImage={surface.D3DImage.PixelWidth}x{surface.D3DImage.PixelHeight} rect={rect.Width:F0}x{rect.Height:F0}");
             dc.DrawImage(surface.D3DImage, rect);
             return;
         }
 
-        Console.WriteLine($"[FLV] OnRender  FALLBACK black rect  surface={(surface != null ? "set" : "null")} IsFrontBufferAvailable={surface?.D3DImage?.IsFrontBufferAvailable}");
+        DebugLogger.Print($"[FLV] OnRender  FALLBACK black rect  surface={(surface != null ? "set" : "null")} IsFrontBufferAvailable={surface?.D3DImage?.IsFrontBufferAvailable}");
         dc.DrawRectangle(Brushes.Black, null, rect);
     }
 
@@ -142,7 +142,7 @@ public class FlyleafView : Decorator, IHostPlayer, IDisposable
 
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
-        Console.WriteLine($"[FLV] OnLoaded  Player={(Player != null ? "set" : "null")} surface={(surface != null ? "set" : "null")} ActualSize={ActualWidth}x{ActualHeight}");
+        DebugLogger.Print($"[FLV] OnLoaded  Player={(Player != null ? "set" : "null")} surface={(surface != null ? "set" : "null")} ActualSize={ActualWidth}x{ActualHeight}");
 
         if (Player != null && surface == null)
             InitSurface();
@@ -174,7 +174,7 @@ public class FlyleafView : Decorator, IHostPlayer, IDisposable
     private void OnIsFrontBufferAvailableChanged(object sender, DependencyPropertyChangedEventArgs e)
     {
         bool isAvailable = (bool)e.NewValue;
-        Console.WriteLine($"[FLV] IsFrontBufferAvailableChanged  {e.OldValue} → {isAvailable}");
+        DebugLogger.Print($"[FLV] IsFrontBufferAvailableChanged  {e.OldValue} → {isAvailable}");
 
         if (isAvailable)
             InvalidateVisual();
@@ -206,7 +206,7 @@ public class FlyleafView : Decorator, IHostPlayer, IDisposable
     {
         if (Player?.Renderer == null)
         {
-            Console.WriteLine("[FLV] InitSurface  SKIP — Player or Renderer is null");
+            DebugLogger.Print("[FLV] InitSurface  SKIP — Player or Renderer is null");
             return;
         }
 
@@ -216,19 +216,19 @@ public class FlyleafView : Decorator, IHostPlayer, IDisposable
         var controlSize = GetControlPixelSize();
         nint hwnd = GetWindowHandle();
 
-        Console.WriteLine($"[FLV] InitSurface  image={imageSize.Width}x{imageSize.Height} control={controlSize.Width}x{controlSize.Height} hwnd=0x{hwnd:X}");
+        DebugLogger.Print($"[FLV] InitSurface  image={imageSize.Width}x{imageSize.Height} control={controlSize.Width}x{controlSize.Height} hwnd=0x{hwnd:X}");
 
         surface = new D3DImageSurface();
         surface.D3DImage.IsFrontBufferAvailableChanged += OnIsFrontBufferAvailableChanged;
         surface.Initialize(Player, imageSize.Width, imageSize.Height, controlSize.Width, controlSize.Height, hwnd);
 
-        Console.WriteLine($"[FLV] InitSurface  surface ready — IsFrontBufferAvailable={surface.D3DImage.IsFrontBufferAvailable} PixelSize={surface.D3DImage.PixelWidth}x{surface.D3DImage.PixelHeight}");
+        DebugLogger.Print($"[FLV] InitSurface  surface ready — IsFrontBufferAvailable={surface.D3DImage.IsFrontBufferAvailable} PixelSize={surface.D3DImage.PixelWidth}x{surface.D3DImage.PixelHeight}");
 
         // Force OnRender to be called so WPF registers as a listener for D3DImage.Changed.
         // Without this, the initial OnRender (before OnLoaded) drew a black fallback rect,
         // so WPF never knows to re-render when D3DImage fires Changed.
         InvalidateVisual();
-        Console.WriteLine("[FLV] InitSurface  InvalidateVisual called");
+        DebugLogger.Print("[FLV] InitSurface  InvalidateVisual called");
     }
 
     private void DisposeSurface()
@@ -236,7 +236,7 @@ public class FlyleafView : Decorator, IHostPlayer, IDisposable
         if (surface == null)
             return;
 
-        Console.WriteLine("[FLV] DisposeSurface  called");
+        DebugLogger.Print("[FLV] DisposeSurface  called");
         surface.D3DImage.IsFrontBufferAvailableChanged -= OnIsFrontBufferAvailableChanged;
         surface.Dispose();
         surface = null;
