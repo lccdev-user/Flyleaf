@@ -12,7 +12,7 @@ using InputElementDescription = Vortice.Direct3D11.InputElementDescription;
 using VRect = Vortice.Mathematics.Rect;
 
 namespace FlyleafLib.MediaFramework.MediaRenderer;
-
+#nullable enable
 public partial class BitmapRenderer : NotifyPropertyChanged, IDisposable
 {
     private ID3D11Buffer? _vertexBuffer;
@@ -25,6 +25,7 @@ public partial class BitmapRenderer : NotifyPropertyChanged, IDisposable
     private ID2D1DeviceContext? _d2dContext;
     private ID2D1Bitmap1? _d2dTargetBitmap;
     private ID2D1Bitmap? _d2dSourceBitmap;
+
     private BitmapProperties1 bitmapProps = new()
     {
         BitmapOptions = BitmapOptions.Target | BitmapOptions.CannotDraw,
@@ -105,7 +106,7 @@ public partial class BitmapRenderer : NotifyPropertyChanged, IDisposable
         _initialized = true;
     }
 
-    private void OnUnloadContext(object sender, DrawingSurfaceEventArgs e)
+    private void OnUnloadContext(object? sender, DrawingSurfaceEventArgs e)
     {
         Log.Debug("OnUnloadContext");
 
@@ -177,7 +178,8 @@ public partial class BitmapRenderer : NotifyPropertyChanged, IDisposable
         using var surface = _drawSurface.ColorTexture?.QueryInterface<IDXGISurface>();
 
         _d2dTargetBitmap = _d2dContext?.CreateBitmapFromDxgiSurface(surface, bitmapProps);
-        _d2dContext.Target = _d2dTargetBitmap;
+        if (_d2dContext != null)
+            _d2dContext.Target = _d2dTargetBitmap;
 
         RecreateD2DBitmap();
     }
@@ -299,3 +301,4 @@ public partial class BitmapRenderer : NotifyPropertyChanged, IDisposable
         }
     }
 }
+#nullable disable

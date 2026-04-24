@@ -1,5 +1,5 @@
 ﻿namespace FlyleafLib.Custom;
-
+#nullable enable
 public interface ICustomVideoStream
 {
     event Action<long>? StartTimeChanged;
@@ -35,3 +35,4 @@ public interface ICustomVideoStream
     bool IsBufferReady { get; }
     int Mode { get; set; }
 }
+#nullable disable

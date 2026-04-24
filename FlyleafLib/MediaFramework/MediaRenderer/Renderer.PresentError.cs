@@ -8,7 +8,7 @@ using Bitmap = System.Drawing.Bitmap;
 using Rectangle = System.Drawing.Rectangle;
 
 namespace FlyleafLib.MediaFramework.MediaRenderer;
-
+#nullable enable
 public  partial class Renderer
 {
     internal ID2D1Device?          deviceErrorScreen;
@@ -292,3 +292,4 @@ public  partial class Renderer
     }
 
 }
+#nullable disable

@@ -4,7 +4,7 @@ using System.Diagnostics;
 using Vortice.Direct2D1;
 
 namespace FlyleafLib.MediaFramework.MediaRenderer;
-
+#nullable enable
 public unsafe partial class Renderer
 {
     SwsContext*     swsCustomCtx;
@@ -146,3 +146,4 @@ public unsafe partial class Renderer
         }
     }
 }
+#nullable disable
