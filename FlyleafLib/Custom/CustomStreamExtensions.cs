@@ -30,7 +30,11 @@ public static class CustomStreamExtensions
         if (stream is not ICustomVideoStream custom)
             return 0;
 
-        var offset = custom.StartTimestamp > 0 ? custom.LastTimestamp - custom.StartTimestamp : 0;
+        var startTime = custom?.StartTimestamp ?? 0;
+        var lastTime = custom?.LastTimestamp ?? 0;
+
+        var offset = lastTime - startTime;
+
 
         return timeUnit switch
         {

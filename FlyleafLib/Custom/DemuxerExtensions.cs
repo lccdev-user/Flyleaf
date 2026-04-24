@@ -31,23 +31,33 @@ public unsafe static class DemuxerExtensions
             custom.FrameCount = 0;
     }
     public static bool IsCustomPlayStopMode(this Demuxer demuxer) => demuxer.IsCustomStream() ? demuxer.CustomIOContext.stream.IsCustomPlayStopMode() : false;
-    public static bool IsSearchCompleted(this Demuxer demuxer, long timestamp) => demuxer.CustomIOContext.stream is ICustomVideoStream stream && stream.IsPlayStopMode && timestamp >= stream.TargetTimestamp;
-    public static bool IsSearchCompleted(this Demuxer demuxer, AVFrame* frame, double timeBase)
+    public static bool IsSearchCompleted(this Demuxer demuxer, long timestamp, LogHandler? Log = null)
+    {
+        if (demuxer.CustomIOContext.stream is not ICustomVideoStream stream)
+            return false;
+
+        long frameTime = timestamp + stream.StartTimestamp;
+        Log?.Debug($"IsSearchCompleted: timestamp {timestamp} ms, frame time {frameTime}, target {stream.TargetTimestamp}, start {stream.StartTimestamp}");
+        return stream.IsPlayStopMode && frameTime >= stream.TargetTimestamp;
+    }
+    public static bool IsSearchCompleted(this Demuxer demuxer, AVFrame* frame, double timeBase, LogHandler? Log = null)
     {
         if (demuxer.CustomIOContext.stream is not ICustomVideoStream stream || !stream.IsPlayStopMode)
             return false;
-        var frameTime = (long)(frame->pts * timeBase) / 1000;
+        var frameTime = (long)(frame->pts * timeBase) / 1_000;
         frameTime += demuxer.StartCustomTimestamp(VideoTimeUnit.Milliseconds);
         var expectedTime = demuxer.ExpectedCustomTimestamp(VideoTimeUnit.Milliseconds);
-
+        Log?.Debug($"IsSearchCompleted: pts {frame->pts}, timeBase {timeBase}, frameTime {frameTime}, expected {expectedTime}");
         return (frameTime >= expectedTime) || (expectedTime == 0);
     }
-    public static bool SkipFrameBySearch(this Demuxer demuxer, long timestamp)
+    public static bool SkipFrameBySearch(this Demuxer demuxer, long timestamp, LogHandler? Log = null)
     {
         if (demuxer.CustomIOContext.stream is not ICustomVideoStream stream || !stream.IsPlayStopMode)
             return false;
-        var offset = timestamp - stream.TargetTimestamp;
-        return offset < - 50;        
+
+        var distance = timestamp - stream.TargetTimestamp;
+        Log?.Debug($"SkipFrameBySearch: ts {timestamp}, expected {stream.TargetTimestamp}, distance {distance}, result {distance < - 50}");
+        return distance < - 50;        
     }
     public static void SetPacketPts(this Demuxer demuxer, AVPacket* packet, out double timeBase, LogHandler? Log = null)
     {
@@ -58,10 +68,10 @@ public unsafe static class DemuxerExtensions
         var videoStream = demuxer.AVStreamToStream[packet->stream_index];
         timeBase = videoStream.Timebase;
         long frameDuration = 1_000_000 / demuxer.CustomFramePerSecond();
-        long frameTime = demuxer.CurCustomTime(VideoTimeUnit.Microseconds);
-        Log?.Debug($"SetPacketPts: pts {(long)(frameTime / timeBase)}, timestamp {(frameTime / 1000) + stream.StartTimestamp}");
+        long frameTime = demuxer.CurCustomTime(VideoTimeUnit.Ticks);
         if (timeBase > 0)
         {
+            Log?.Debug($"SetPacketPts: frame ts {frameTime}, pts {(long)(frameTime / timeBase)},timeBase {timeBase}, timestamp {(frameTime / 10_000) + stream.StartTimestamp}");
             packet->pts = (long)(frameTime / timeBase);
             packet->duration = frameDuration;
             packet->dts = AV_NOPTS_VALUE;
