@@ -19,13 +19,12 @@ public unsafe partial class Player
 
             vFrame.Id = showFrameCount;
 
-            var skipFrame = VideoDemuxer.SkipFrameBySearch(VideoDemuxer.ToCustomTimestamp(vFrame.Timestamp / 1000));
-
-            Log.Error($"FrameSearchOneStep #{vFrame.Id} - {(skipFrame ? "skiped" : "")}, timestamp {vFrame.Timestamp} / {VideoDemuxer.ToCustomTimestamp(vFrame.Timestamp / 1000)}, count {showFrameCount}/{framesDisplayed}");
+            var skipFrame = VideoDemuxer.SkipFrameBySearch(VideoDemuxer.ToCustomTimestamp(vFrame.Timestamp / Ticks.InOneMillisecond));
+            
             if (!skipFrame)
             {
                 Renderer.RenderRequest(vFrame);
-                frameTimestamp = VideoDemuxer.ToCustomTimestamp(vFrame.Timestamp / 1000);
+                frameTimestamp = VideoDemuxer.ToCustomTimestamp(vFrame.Timestamp / Ticks.InOneMillisecond);
             }
 
             UpdateCurTime(vFrame.Timestamp);
