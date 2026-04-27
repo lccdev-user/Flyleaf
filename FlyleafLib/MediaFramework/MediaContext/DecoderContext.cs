@@ -526,7 +526,7 @@ public unsafe partial class DecoderContext : PluginHandler
                 Log.Trace($"[{stream.Type}] DTS: {(dts == -1 ? "-" : TicksToTime(dts))} PTS: {(pts == -1 ? "-" : TicksToTime(pts))} | FLPTS: {(pts == -1 ? "-" : TicksToTime(pts - VideoDemuxer.StartTime))} | CurTime: {TicksToTime(VideoDemuxer.CurTime)} | Buffered: {TicksToTime(VideoDemuxer.BufferedDuration)}");
             }
 
-            VideoDemuxer.SetPacketPts(packet, out timeBase, Log);
+            VideoDemuxer.SetPacketPts(packet, out timeBase);
             
             var codecType = VideoDemuxer.FormatContext->streams[packet->stream_index]->codecpar->codec_type;
 
@@ -583,7 +583,7 @@ public unsafe partial class DecoderContext : PluginHandler
 
                         if (VideoDemuxer.IsCustomPlayStopMode())
                         {
-                            if (!VideoDemuxer.IsSearchCompleted(VideoDecoder.frame, timeBase, Log))
+                            if (!VideoDemuxer.IsSearchCompleted(VideoDecoder.frame, timeBase))
                             {
                                 Log.Debug($"GetVideoFrame: skiped {(long)(VideoDecoder.frame->pts * timeBase)} / {VideoDemuxer.ToCustomTimestamp((long)(VideoDecoder.frame->pts * timeBase) / 10_000)}," +
                                     $"expected {VideoDemuxer.ExpectedCustomTimestamp(VideoTimeUnit.Milliseconds)}");

@@ -37,7 +37,7 @@ public unsafe static class DemuxerExtensions
             return false;
 
         long frameTime = timestamp + stream.StartTimestamp;
-        Log?.Debug($"IsSearchCompleted: timestamp {timestamp} ms, frame time {frameTime}, target {stream.TargetTimestamp}, start {stream.StartTimestamp}");
+        Log?.Trace($"IsSearchCompleted: timestamp {timestamp} ms, frame time {frameTime}, expected {stream.TargetTimestamp}");
         return stream.IsPlayStopMode && frameTime >= stream.TargetTimestamp;
     }
     public static bool IsSearchCompleted(this Demuxer demuxer, AVFrame* frame, double timeBase, LogHandler? Log = null)
@@ -47,7 +47,7 @@ public unsafe static class DemuxerExtensions
         var frameTime = (long)(frame->pts * timeBase) / 1_000;
         frameTime += demuxer.StartCustomTimestamp(VideoTimeUnit.Milliseconds);
         var expectedTime = demuxer.ExpectedCustomTimestamp(VideoTimeUnit.Milliseconds);
-        Log?.Debug($"IsSearchCompleted: pts {frame->pts}, timeBase {timeBase}, frameTime {frameTime}, expected {expectedTime}");
+        Log?.Trace($"IsSearchCompleted: pts {frame->pts}, timeBase {timeBase}, frameTime {frameTime}, expected {expectedTime}");
         return (frameTime >= expectedTime) || (expectedTime == 0);
     }
     public static bool SkipFrameBySearch(this Demuxer demuxer, long timestamp, LogHandler? Log = null)
@@ -56,7 +56,7 @@ public unsafe static class DemuxerExtensions
             return false;
 
         var distance = timestamp - stream.TargetTimestamp;
-        Log?.Debug($"SkipFrameBySearch: ts {timestamp}, expected {stream.TargetTimestamp}, distance {distance}, result {distance < - 50}");
+        Log?.Trace($"SkipFrameBySearch: timestamp {timestamp}, expected {stream.TargetTimestamp}, distance {distance}, result {distance < - 50}");
         return distance < - 50;        
     }
     public static void SetPacketPts(this Demuxer demuxer, AVPacket* packet, out double timeBase, LogHandler? Log = null)
@@ -71,7 +71,7 @@ public unsafe static class DemuxerExtensions
         long frameTime = demuxer.CurCustomTime(VideoTimeUnit.Ticks);
         if (timeBase > 0)
         {
-            Log?.Debug($"SetPacketPts: frame ts {frameTime}, pts {(long)(frameTime / timeBase)},timeBase {timeBase}, timestamp {(frameTime / 10_000) + stream.StartTimestamp}");
+            Log?.Trace($"SetPacketPts: frame ts {frameTime}, pts {(long)(frameTime / timeBase)},timeBase {timeBase}, timestamp {(frameTime / 10_000) + stream.StartTimestamp}");
             packet->pts = (long)(frameTime / timeBase);
             packet->duration = frameDuration;
             packet->dts = AV_NOPTS_VALUE;

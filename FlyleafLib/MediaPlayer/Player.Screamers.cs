@@ -61,8 +61,8 @@ unsafe partial class Player
             return;
 
         var skipFrame = VideoDemuxer.SkipFrameBySearch(VideoDemuxer.ToCustomTimestamp(vFrame.Timestamp / 10_000), Log);
-        
-        Log.Error($"ShowOneFrame #{vFrame.Id} - {(skipFrame ? "skiped" : "")}, timestamp {vFrame.Timestamp} / {VideoDemuxer.ToCustomTimestamp(vFrame.Timestamp / 10_000)}, count {showFrameCount}/{framesDisplayed}");
+        if (CanTrace)
+            Log.Trace($"ShowOneFrame #{vFrame.Id} - {(skipFrame ? "skiped" : "")}, timestamp {vFrame.Timestamp} / {VideoDemuxer.ToCustomTimestamp(vFrame.Timestamp / 10_000)}, count {showFrameCount}/{framesDisplayed}");
         if (!skipFrame || showFrameCount == 0)
             Renderer.RenderRequest(vFrame);
 

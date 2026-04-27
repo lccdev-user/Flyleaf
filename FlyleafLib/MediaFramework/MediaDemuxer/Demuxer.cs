@@ -6,6 +6,7 @@ using static FlyleafLib.Config;
 
 using FlyleafLib.MediaFramework.MediaProgram;
 using FlyleafLib.MediaFramework.MediaStream;
+using Vortice.WIC;
 
 namespace FlyleafLib.MediaFramework.MediaDemuxer;
 
@@ -1203,22 +1204,18 @@ public unsafe class Demuxer : RunThreadBase
                 if (IsHLSLive)
                     UpdateHLSTime();
 
-                if (this.IsCustomStreamLive())
+                if (this.IsCustomStream())
                 {
                     this.UpdateCustomDuration();
 
                     long fps = this.CustomFramePerSecond();
                     if (fps > 0)
-                    {
-                        var stream = AVStreamToStream[packet->stream_index];
-                        long frameDuration = 1_000_000 / fps ;
+                    {   
                         long frameTime = this.CurCustomTime(VideoTimeUnit.Microseconds);
-
-                        packet->pts = (long)(frameTime / stream.Timebase);
-                        packet->duration = frameDuration;
-                        packet->dts = AV_NOPTS_VALUE;
-
-                        Log.Debug($"[vls-video] duration {frameDuration}, time {frameTime}  | frm/s: {fps} | frmDur: {Utils.TicksToTime(frameDuration * 10)}, time {Utils.TicksToTime(frameTime * 10)}, pts {packet->pts}, timeBase {stream.Timebase}");
+                        long frameDuration = 1_000_000 / fps ;
+                        this.SetPacketPts(packet, out var timeBase);
+                        if (CanDebug)
+                            Log.Debug($"[vls-video] duration {frameDuration}, time {frameTime}  | frm/s: {fps} | frmDur: {Utils.TicksToTime(frameDuration * 10)}, time {Utils.TicksToTime(frameTime * 10)}, pts {packet->pts}");
                     }
                 }
 
@@ -1297,6 +1294,7 @@ public unsafe class Demuxer : RunThreadBase
                 }
                 else
                 {
+                    Log.Debug($"enqueue packet: pts {packet->pts}, {packet->time_base}");
                     Packets.Enqueue(packet);
                     packet = av_packet_alloc();
                 }

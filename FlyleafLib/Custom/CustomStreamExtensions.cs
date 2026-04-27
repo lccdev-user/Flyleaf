@@ -7,34 +7,39 @@ public static class CustomStreamExtensions
     public static long StartTimestamp(this Stream stream, VideoTimeUnit timeUnit = VideoTimeUnit.Milliseconds) => stream is not ICustomVideoStream custom ? 0 : timeUnit switch
     {
         VideoTimeUnit.Microseconds => custom.StartTimestamp * 1000,
-        VideoTimeUnit.Ticks => custom.StartTimestamp * 10000,
+        VideoTimeUnit.Ticks => custom.StartTimestamp * 10_000,
         _ => custom.StartTimestamp,
     };
     
     public static long LastTimestamp(this Stream stream,  VideoTimeUnit timeUnit = VideoTimeUnit.Milliseconds) => stream is not ICustomVideoStream custom ? 0 : timeUnit switch
     {
         VideoTimeUnit.Microseconds => custom.LastTimestamp * 1000,
-        VideoTimeUnit.Ticks => custom.LastTimestamp * 10000,
+        VideoTimeUnit.Ticks => custom.LastTimestamp * 10_000,
         _ => custom.LastTimestamp,
     };
 
     public static long FirstTimestamp(this Stream stream, VideoTimeUnit timeUnit = VideoTimeUnit.Milliseconds) => stream is not ICustomVideoStream custom ? 0 : timeUnit switch
     {
         VideoTimeUnit.Microseconds => custom.FirstTimestamp * 1000,
-        VideoTimeUnit.Ticks => custom.FirstTimestamp * 10000,
+        VideoTimeUnit.Ticks => custom.FirstTimestamp * 10_000,
         _ => custom.FirstTimestamp,
     };
 
     public static long CurTime(this Stream stream, VideoTimeUnit timeUnit = VideoTimeUnit.Milliseconds)
     {
+        long offset = 0;
         if (stream is not ICustomVideoStream custom)
-            return 0;
-
-        var startTime = custom?.StartTimestamp ?? 0;
-        var lastTime = custom?.LastTimestamp ?? 0;
-
-        var offset = lastTime - startTime;
-
+            return offset;        
+        try
+        {
+            var startTime = custom?.StartTimestamp ?? 0;
+            var lastTime = custom?.LastTimestamp ?? 0;
+            offset = lastTime - startTime;
+        }
+        catch (Exception ex)
+        {   
+            Console.WriteLine(ex.Message);
+        }
 
         return timeUnit switch
         {
@@ -47,13 +52,13 @@ public static class CustomStreamExtensions
     public static long ExpectedTimestamp(this Stream stream, VideoTimeUnit timeUnit = VideoTimeUnit.Milliseconds) => stream is not ICustomVideoStream custom ? 0 : timeUnit switch
     {
         VideoTimeUnit.Microseconds => custom.TargetTimestamp * 1000,
-        VideoTimeUnit.Ticks => custom.TargetTimestamp * 10000,
+        VideoTimeUnit.Ticks => custom.TargetTimestamp * 10_000,
         _ => custom.TargetTimestamp,
     };   
     public static long CurrentTimestamp(this Stream stream, VideoTimeUnit timeUnit = VideoTimeUnit.Milliseconds) => stream is not ICustomVideoStream custom ? 0 : timeUnit switch
     {
         VideoTimeUnit.Microseconds => custom.CurrentTimestamp * 1000,
-        VideoTimeUnit.Ticks => custom.CurrentTimestamp * 10000,
+        VideoTimeUnit.Ticks => custom.CurrentTimestamp * 10_000,
         _ => custom.CurrentTimestamp,
     };   
     public static long GetDuration(this Stream stream) => stream is not ICustomVideoStream custom? 40 : Convert.ToInt64((custom.FrameDuration > 0 ? custom.FrameDuration : 40));
