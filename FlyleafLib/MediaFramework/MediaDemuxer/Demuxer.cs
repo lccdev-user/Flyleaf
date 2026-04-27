@@ -6,7 +6,6 @@ using static FlyleafLib.Config;
 
 using FlyleafLib.MediaFramework.MediaProgram;
 using FlyleafLib.MediaFramework.MediaStream;
-using Vortice.WIC;
 
 namespace FlyleafLib.MediaFramework.MediaDemuxer;
 
@@ -1294,7 +1293,6 @@ public unsafe class Demuxer : RunThreadBase
                 }
                 else
                 {
-                    Log.Debug($"enqueue packet: pts {packet->pts}, {packet->time_base}");
                     Packets.Enqueue(packet);
                     packet = av_packet_alloc();
                 }
