@@ -44,7 +44,7 @@ public unsafe static class DemuxerExtensions
     {
         if (demuxer.CustomIOContext.stream is not ICustomVideoStream stream || !stream.IsPlayStopMode)
             return false;
-        var frameTime = (long)(frame->pts * timeBase) / 1_000;
+        var frameTime = (long)(frame->pts * timeBase) / Ticks.InOneMillisecond;
         frameTime += demuxer.StartCustomTimestamp(VideoTimeUnit.Milliseconds);
         var expectedTime = demuxer.ExpectedCustomTimestamp(VideoTimeUnit.Milliseconds);
         Log?.Trace($"IsSearchCompleted: pts {frame->pts}, timeBase {timeBase}, frameTime {frameTime}, expected {expectedTime}");

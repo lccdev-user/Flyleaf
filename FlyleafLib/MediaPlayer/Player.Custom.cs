@@ -19,12 +19,12 @@ public unsafe partial class Player
 
             vFrame.Id = showFrameCount;
 
-            var skipFrame = VideoDemuxer.SkipFrameBySearch(VideoDemuxer.ToCustomTimestamp(vFrame.Timestamp / 10_000));
+            var skipFrame = VideoDemuxer.SkipFrameBySearch(VideoDemuxer.ToCustomTimestamp(vFrame.Timestamp / Ticks.InOneMillisecond));
             
             if (!skipFrame)
             {
                 Renderer.RenderRequest(vFrame);
-                frameTimestamp = VideoDemuxer.ToCustomTimestamp(vFrame.Timestamp / 10_000);
+                frameTimestamp = VideoDemuxer.ToCustomTimestamp(vFrame.Timestamp / Ticks.InOneMillisecond);
             }
 
             UpdateCurTime(vFrame.Timestamp);

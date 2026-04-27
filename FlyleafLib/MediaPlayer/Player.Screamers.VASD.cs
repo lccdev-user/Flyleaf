@@ -325,7 +325,7 @@ unsafe partial class Player
             {
                 if (VideoDecoder.Status == MediaFramework.Status.Ended) // TBR: Transfer to Playback finally for all screamers*?
                 {
-                    Thread.Sleep(Math.Min((int)(VideoDemuxer.VideoStream.FrameDuration / 10_000), 40)); // TBR: Last frame's duration | Pauses the rendering(*) | Let audio for proper closure?*
+                    Thread.Sleep(Math.Min((int)(VideoDemuxer.VideoStream.FrameDuration / 10000), 40)); // TBR: Last frame's duration | Pauses the rendering(*) | Let audio for proper closure?*
 
                     UpdateCurTime(
                         Math.Abs(VideoDemuxer.Duration - curTime) < 2 * VideoDemuxer.VideoStream.FrameDuration ?
@@ -423,7 +423,7 @@ unsafe partial class Player
             if (!refreshed)
             {
                 if (CanTrace) Log.Trace($"[V] Presenting #{vFrame.Id}, ts {TicksToTime(vFrame.Timestamp)}{(secondField ? " | SF" : "")}, frameTime {VideoDemuxer.ToCustomTimestamp(vFrame.Timestamp / 10_000)}");
-                if (!VideoDemuxer.SkipFrameBySearch(VideoDemuxer.ToCustomTimestamp(vFrame.Timestamp / 10_000)))
+                if (!VideoDemuxer.SkipFrameBySearch(VideoDemuxer.ToCustomTimestamp(vFrame.Timestamp / Ticks.InOneMillisecond)))
                 {
                     if (Renderer.PresentPlay())
                     {
@@ -437,7 +437,7 @@ unsafe partial class Player
             else
                 refreshed = false;
             
-            if (VideoDemuxer.IsSearchCompleted(VideoDemuxer.ToCustomTimestamp(vFrame.Timestamp / 10_000)))
+            if (VideoDemuxer.IsSearchCompleted(VideoDemuxer.ToCustomTimestamp(vFrame.Timestamp / Ticks.InOneMillisecond)))
             {
                 if (CanDebug) Log.Debug($"PlayVASD - search completed, showCnt {showFrameCount}, displayed {framesDisplayed}");
                 status = Status.Paused;

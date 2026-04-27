@@ -6,22 +6,22 @@ public static class CustomStreamExtensions
 {
     public static long StartTimestamp(this Stream stream, VideoTimeUnit timeUnit = VideoTimeUnit.Milliseconds) => stream is not ICustomVideoStream custom ? 0 : timeUnit switch
     {
-        VideoTimeUnit.Microseconds => custom.StartTimestamp * 1000,
-        VideoTimeUnit.Ticks => custom.StartTimestamp * 10_000,
+        VideoTimeUnit.Microseconds => custom.StartTimestamp * Microseconds.InOneMillisecond,
+        VideoTimeUnit.Ticks => custom.StartTimestamp * Ticks.InOneMillisecond,
         _ => custom.StartTimestamp,
     };
     
     public static long LastTimestamp(this Stream stream,  VideoTimeUnit timeUnit = VideoTimeUnit.Milliseconds) => stream is not ICustomVideoStream custom ? 0 : timeUnit switch
     {
-        VideoTimeUnit.Microseconds => custom.LastTimestamp * 1000,
-        VideoTimeUnit.Ticks => custom.LastTimestamp * 10_000,
+        VideoTimeUnit.Microseconds => custom.LastTimestamp * Microseconds.InOneMillisecond,
+        VideoTimeUnit.Ticks => custom.LastTimestamp * Ticks.InOneMillisecond,
         _ => custom.LastTimestamp,
     };
 
     public static long FirstTimestamp(this Stream stream, VideoTimeUnit timeUnit = VideoTimeUnit.Milliseconds) => stream is not ICustomVideoStream custom ? 0 : timeUnit switch
     {
-        VideoTimeUnit.Microseconds => custom.FirstTimestamp * 1000,
-        VideoTimeUnit.Ticks => custom.FirstTimestamp * 10_000,
+        VideoTimeUnit.Microseconds => custom.FirstTimestamp * Microseconds.InOneMillisecond,
+        VideoTimeUnit.Ticks => custom.FirstTimestamp * Ticks.InOneMillisecond,
         _ => custom.FirstTimestamp,
     };
 
@@ -43,22 +43,22 @@ public static class CustomStreamExtensions
 
         return timeUnit switch
         {
-            VideoTimeUnit.Microseconds => offset * 1000,
-            VideoTimeUnit.Ticks => offset * 10000,
+            VideoTimeUnit.Microseconds => offset * Microseconds.InOneMillisecond,
+            VideoTimeUnit.Ticks => offset * Ticks.InOneMillisecond,
             _ => offset,
         };
     }
     public static int ExpectedFrameIndex(this Stream stream) => stream is not ICustomVideoStream custom ? 0 : custom.ExpectedFrameIndex;    
     public static long ExpectedTimestamp(this Stream stream, VideoTimeUnit timeUnit = VideoTimeUnit.Milliseconds) => stream is not ICustomVideoStream custom ? 0 : timeUnit switch
     {
-        VideoTimeUnit.Microseconds => custom.TargetTimestamp * 1000,
-        VideoTimeUnit.Ticks => custom.TargetTimestamp * 10_000,
+        VideoTimeUnit.Microseconds => custom.TargetTimestamp * Microseconds.InOneMillisecond,
+        VideoTimeUnit.Ticks => custom.TargetTimestamp * Ticks.InOneMillisecond,
         _ => custom.TargetTimestamp,
     };   
     public static long CurrentTimestamp(this Stream stream, VideoTimeUnit timeUnit = VideoTimeUnit.Milliseconds) => stream is not ICustomVideoStream custom ? 0 : timeUnit switch
     {
-        VideoTimeUnit.Microseconds => custom.CurrentTimestamp * 1000,
-        VideoTimeUnit.Ticks => custom.CurrentTimestamp * 10_000,
+        VideoTimeUnit.Microseconds => custom.CurrentTimestamp * Microseconds.InOneMillisecond,
+        VideoTimeUnit.Ticks => custom.CurrentTimestamp * Ticks.InOneMillisecond,
         _ => custom.CurrentTimestamp,
     };   
     public static long GetDuration(this Stream stream) => stream is not ICustomVideoStream custom? 40 : Convert.ToInt64((custom.FrameDuration > 0 ? custom.FrameDuration : 40));

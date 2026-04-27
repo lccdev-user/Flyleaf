@@ -60,10 +60,10 @@ unsafe partial class Player
         if (!vFrames.TryDequeue(out var vFrame))
             return;
 
-        var skipFrame = VideoDemuxer.SkipFrameBySearch(VideoDemuxer.ToCustomTimestamp(vFrame.Timestamp / 10_000), Log);
+        var skipFrame = VideoDemuxer.SkipFrameBySearch(VideoDemuxer.ToCustomTimestamp(vFrame.Timestamp / Ticks.InOneMillisecond), Log);
         if (CanTrace)
             Log.Trace($"ShowOneFrame #{vFrame.Id} - {(skipFrame ? "skiped" : "")}, timestamp {vFrame.Timestamp} / {VideoDemuxer.ToCustomTimestamp(vFrame.Timestamp / 10_000)}, count {showFrameCount}/{framesDisplayed}");
-        if (!skipFrame || showFrameCount == 0)
+        if (!skipFrame)
             Renderer.RenderRequest(vFrame);
 
         UpdateCurTime(vFrame.Timestamp);
