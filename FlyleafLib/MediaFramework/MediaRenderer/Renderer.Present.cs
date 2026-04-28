@@ -99,13 +99,10 @@ public unsafe partial class Renderer
                     if (!d3CanPresent)
                         return true;
 
-                    if (ErrorScreenEnabled)
-                        ShowErrorScreen();
-                    else
-                        if (Frames.RendererFrame != null)
-                        {
-                            D3Render(Frames.RendererFrame, false); needsClear = false; RenderChild?.Invoke(Frames.RendererFrame);
-                        }
+                    if (Frames.RendererFrame != null && !ErrorScreenEnabled)
+                    {
+                        D3Render(Frames.RendererFrame, false); needsClear = false; RenderChild?.Invoke(Frames.RendererFrame);
+                    }
                 }
                 else
                 {
@@ -114,24 +111,23 @@ public unsafe partial class Renderer
                     if (VideoProcessor == VideoProcessors.D3D11)
                         return RenderIdle();
 
-                    if (ErrorScreenEnabled)
-                        ShowErrorScreen();
-                    else
-                        if (Frames.RendererFrame != null)
+                    if (Frames.RendererFrame != null && !ErrorScreenEnabled)
                         { FLRender(Frames.RendererFrame); needsClear = false; RenderChild?.Invoke(Frames.RendererFrame); }
                 }
 
                 CustomProcessRequests?.Invoke();
-                needsClear = CustomProcessRequests == null && needsClear;
+                needsClear = CustomProcessRequests == null && needsClear || ErrorScreenEnabled;
 
                 if (needsClear)
                 {
-                    if (!Config.Video.ClearScreen)
+                    if (!Config.Video.ClearScreen && !ErrorScreenEnabled)
                         return true;
 
                     //SubsDispose();
                     context.OMSetRenderTargets(SwapChain.BackBufferRtv);
                     context.ClearRenderTargetView(SwapChain.BackBufferRtv, ucfg.flBackColor);
+                    
+                    ShowErrorScreen();
                 }
             }
 
