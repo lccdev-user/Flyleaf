@@ -82,7 +82,16 @@ public unsafe partial class Renderer
         try
         {
             lastRenderAt = DateTime.UtcNow.Ticks;
+            if(ErrorScreenEnabled)
+            {
+                Log.Debug($"RenderIdle: canPresent {SwapChain.CanPresent} or cfg is null {scfg is null}");
+                context.OMSetRenderTargets(SwapChain.BackBufferRtv);
+                context.ClearRenderTargetView(SwapChain.BackBufferRtv, ucfg.flBackColor);
 
+                ShowErrorScreen();
+                SwapChain.Present(1, PresentFlags.None);
+                return true;
+            }
             if (!SwapChain.CanPresent || scfg is null)
                 return true;
 
@@ -130,7 +139,10 @@ public unsafe partial class Renderer
                     ShowErrorScreen();
                 }
             }
-
+            if (ErrorScreenEnabled)
+            {
+                Log.Debug("RenderIdle: SwapChain.Present");
+            }
             SwapChain.Present(1, PresentFlags.None);
 
             return true;
