@@ -20,7 +20,7 @@ public unsafe partial class Player
             vFrame.Id = showFrameCount;
 
             var skipFrame = VideoDemuxer.SkipFrameBySearch(VideoDemuxer.ToCustomTimestamp(vFrame.Timestamp / Ticks.InOneMillisecond));
-            
+
             if (!skipFrame)
             {
                 Renderer.RenderRequest(vFrame);
@@ -28,6 +28,7 @@ public unsafe partial class Player
             }
 
             UpdateCurTime(vFrame.Timestamp);
+            Raise(nameof(CurTime));
             showFrameCount++;
 
             // Required for buffering on paused
