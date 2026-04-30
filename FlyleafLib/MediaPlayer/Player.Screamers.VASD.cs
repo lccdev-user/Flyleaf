@@ -227,6 +227,9 @@ unsafe partial class Player
            StopScreamerVASDAudio();
 
            decoder.GetVideoFrame(ms * 10000);
+
+           if (Renderer.ErrorScreenEnabled)
+                Renderer.RenderRequest();
         }
 
         while (status == Status.Playing)

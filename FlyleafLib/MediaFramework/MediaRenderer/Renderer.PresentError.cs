@@ -31,7 +31,10 @@ public  partial class Renderer
             if (errorScreenEnabled != value)
             {
                 if (value)
+                {
+                    Log.Debug($"ErrorScreenEnable {value}, sc {(SwapChain.BackBuffer != null ? "set" : "null")}");
                     SwapChain.SetupErrorScreenContext();
+                }
                 else
                 {
                     ErrorMessage = string.Empty;
@@ -109,11 +112,7 @@ public  partial class Renderer
             {
                 bitmap.UnlockBits(bitmapData);
             }
-        }
-        if (ControlWidth <= 1 || ControlHeight <= 1)
-        {
-            ControlWidth = bitmap.Width; ControlHeight = bitmap.Height;
-        }
+        }        
     }
     internal void ShowErrorScreen(bool force = false)
     {

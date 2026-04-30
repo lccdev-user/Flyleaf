@@ -54,6 +54,17 @@ public unsafe partial class Renderer
         Log.Debug($"[CP] CustomFillPlanesAction, elapsed time {elapsedTime.TotalMicroseconds / (double) 1000} ms");
     }
 
+    public void CheckControlSize(int  width, int height)
+    {
+        if (width == 0 || height == 0) return;
+
+        if (ControlWidth <= 1  || ControlHeight <= 1)
+        {
+            ControlWidth = width;
+            ControlHeight = height;
+            Log.Debug($"CheckControlSize( w {width}, h {height})");
+        }
+    }
     private void CustomFillPlanesHW(ICustomPlayer custom, VideoFrame frame)
     {
         var sw_frame   = av_frame_alloc();
