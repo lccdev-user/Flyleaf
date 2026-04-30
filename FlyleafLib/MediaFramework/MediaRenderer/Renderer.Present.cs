@@ -82,9 +82,9 @@ public unsafe partial class Renderer
         try
         {
             lastRenderAt = DateTime.UtcNow.Ticks;
-            if(ErrorScreenEnabled)
+            if(ErrorScreenEnabled && SwapChain.CanPresent)
             {
-                Log.Debug($"RenderIdle: canPresent {SwapChain.CanPresent} or cfg is null {scfg is null}");
+                Log.Debug($"RenderIdle: canPresent {SwapChain.CanPresent}");
                 context.OMSetRenderTargets(SwapChain.BackBufferRtv);
                 context.ClearRenderTargetView(SwapChain.BackBufferRtv, ucfg.flBackColor);
 
