@@ -135,10 +135,6 @@ public unsafe partial class Renderer
                     ShowErrorScreen();
                 }
             }
-            if (ErrorScreenEnabled)
-            {
-                Log.Debug("RenderIdle: SwapChain.Present");
-            }
             SwapChain.Present(1, PresentFlags.None);
 
             return true;
