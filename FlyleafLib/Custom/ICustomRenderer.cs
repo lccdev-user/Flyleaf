@@ -7,6 +7,4 @@ public interface ICustomRenderer
     double InitialZoom { get; }
     double MaximalZoom { get; }
     double ValidateZoom(double zoom);
-
-    void CheckControlSize(int width, int height);
 }

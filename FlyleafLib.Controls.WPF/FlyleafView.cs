@@ -1,11 +1,10 @@
+using FlyleafLib.MediaPlayer;
 using System;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
-
-using FlyleafLib.MediaPlayer;
 
 namespace FlyleafLib.Controls.WPF;
 
@@ -196,7 +195,18 @@ public class FlyleafView : Decorator, IHostPlayer, IDisposable
         if (Player == null)
             return;
 
+        var parent = (Grid)Parent;
+        int pw = (int) (parent?.ActualWidth ?? 0);
+        int ph = (int) (parent?.ActualHeight ?? 0);
+
         Player.Host = this;
+
+        if (pw != ActualWidth && ph != ActualHeight)
+        {
+            Width = pw;
+            Height = ph;
+            Console.WriteLine($"SetPlayer: size changed to {Width}x{Height}");
+        }
 
         if (IsLoaded && HasVisibleSize())
             InitSurface();

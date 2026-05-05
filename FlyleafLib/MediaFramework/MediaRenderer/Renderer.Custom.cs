@@ -54,17 +54,15 @@ public unsafe partial class Renderer
         Log.Debug($"[CP] CustomFillPlanesAction, elapsed time {elapsedTime.TotalMicroseconds / (double) 1000} ms");
     }
 
-    public void CheckControlSize(int  width, int height)
+    public bool CustomProcessingIsRequiredToDisplayError()
     {
-        if (width == 0 || height == 0) return;
-
-        if (ControlWidth <= 1  || ControlHeight <= 1)
-        {
-            ControlWidth = width;
-            ControlHeight = height;
-            Log.Debug($"CheckControlSize( w {width}, h {height})");
-        }
+        if ((!ErrorScreenEnabled || ErrorImage is not System.Drawing.Bitmap) ||
+            (SwapChain.CanPresent && scfg is not null && VideoDecoder is not null))
+            return false;
+        else
+            return true;
     }
+
     private void CustomFillPlanesHW(ICustomPlayer custom, VideoFrame frame)
     {
         var sw_frame   = av_frame_alloc();
