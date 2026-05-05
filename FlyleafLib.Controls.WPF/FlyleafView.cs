@@ -205,7 +205,6 @@ public class FlyleafView : Decorator, IHostPlayer, IDisposable
         {
             Width = pw;
             Height = ph;
-            Console.WriteLine($"SetPlayer: size changed to {Width}x{Height}");
         }
 
         if (IsLoaded && HasVisibleSize())
