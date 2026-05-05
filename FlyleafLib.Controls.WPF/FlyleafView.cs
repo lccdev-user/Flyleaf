@@ -195,17 +195,7 @@ public class FlyleafView : Decorator, IHostPlayer, IDisposable
         if (Player == null)
             return;
 
-        var parent = (Grid)Parent;
-        int pw = (int) (parent?.ActualWidth ?? 0);
-        int ph = (int) (parent?.ActualHeight ?? 0);
-
         Player.Host = this;
-
-        if (pw != ActualWidth && ph != ActualHeight)
-        {
-            Width = pw;
-            Height = ph;
-        }
 
         if (IsLoaded && HasVisibleSize())
             InitSurface();
