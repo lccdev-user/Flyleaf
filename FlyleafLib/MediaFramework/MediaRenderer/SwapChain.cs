@@ -221,7 +221,7 @@ public unsafe class SwapChain
             return;
         }
     }
-    public void NotifyBeforePresent()
+    void NotifyBeforePresent()
     {
         var callbacks = beforePresentCallbacks;
         if (callbacks == null)

@@ -31,10 +31,7 @@ public  partial class Renderer
             if (errorScreenEnabled != value)
             {
                 if (value)
-                {
-                    Log.Debug($"ErrorScreenEnable {value}, sc {(SwapChain.BackBuffer != null ? "set" : "null")}");
                     SwapChain?.SetupErrorScreenContext();
-                }
                 else
                 {
                     ErrorMessage = string.Empty;
@@ -118,7 +115,6 @@ public  partial class Renderer
     }
     internal void ShowErrorScreen(bool force = false)
     {
-        Log.Debug($"ShowErrorScreen(force {force}), errorScreenEnabled {errorScreenEnabled}, swapChain.disposed {SwapChain.Disposed}");
         if (force)
         {
             lock (lockDevice)
@@ -279,7 +275,6 @@ public  partial class Renderer
                 var size = bitmapErrorImage.Size;
                 Rect srcRect = new Rect(0.0F, 0.0F, size.Width , size.Height);
                 contextErrorScreen?.DrawBitmap(bitmapErrorImage, dstRect, 1.0f, BitmapInterpolationMode.Linear, srcRect);
-                Log.Debug($"contextErrorScreen.DrawBitmap: srcRect {srcRect}, dstRect {dstRect}");
             }
             else if (ErrorMessage.Length > 0)
             {
