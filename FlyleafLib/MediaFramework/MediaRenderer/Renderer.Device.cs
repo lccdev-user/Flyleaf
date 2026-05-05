@@ -103,6 +103,10 @@ public unsafe partial class Renderer : NotifyPropertyChanged
     {
         DisposeLocal();
 
+        ErrorScreenEnabled = false;
+        errorBitmap?.Dispose();
+        errorBitmap = null;
+
         if (CanDebug) Log.Debug("Initializing");
 
         DeviceCreationFlags debugFlag = DeviceCreationFlags.None;
@@ -191,8 +195,16 @@ public unsafe partial class Renderer : NotifyPropertyChanged
         var wasPlaying  = pausePlayer && player != null && player.Status == MediaPlayer.Status.Playing;
         var wasRunning  = !fromDecoder && VideoDecoder.IsRunning;
         var hadSC       = !SwapChain.Disposed;
-
+        var wasError    = ErrorScreenEnabled;
+        
         isDeviceReset = true;
+
+        if(wasError)
+        {
+            ErrorScreenEnabled = false;
+            ErrorImage = null;
+            RenderRequest(null, true);
+        }
 
         // Stop loops (Play or Idle)
         if (wasPlaying)

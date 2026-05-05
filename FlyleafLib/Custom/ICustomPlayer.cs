@@ -7,4 +7,6 @@ public interface ICustomPlayer
 {
     bool CustomHandlerEnabled { get; }
     void FillCustomPlanes(Renderer sender, VideoFrame frame);
+
+    void InitStreamContext(Stream stream);
 }

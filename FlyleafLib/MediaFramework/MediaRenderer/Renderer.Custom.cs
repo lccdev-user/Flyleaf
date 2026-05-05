@@ -54,6 +54,15 @@ public unsafe partial class Renderer
         Log.Debug($"[CP] CustomFillPlanesAction, elapsed time {elapsedTime.TotalMicroseconds / (double) 1000} ms");
     }
 
+    public bool CustomProcessingIsRequiredToDisplayError()
+    {
+        if ((!ErrorScreenEnabled || ErrorImage is not System.Drawing.Bitmap) ||
+            (SwapChain.CanPresent && scfg is not null && VideoDecoder is not null))
+            return false;
+        else
+            return true;
+    }
+
     private void CustomFillPlanesHW(ICustomPlayer custom, VideoFrame frame)
     {
         var sw_frame   = av_frame_alloc();
