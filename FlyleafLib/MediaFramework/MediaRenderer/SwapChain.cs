@@ -221,7 +221,7 @@ public unsafe class SwapChain
             return;
         }
     }
-    void NotifyBeforePresent()
+    public void NotifyBeforePresent()
     {
         var callbacks = beforePresentCallbacks;
         if (callbacks == null)
@@ -325,7 +325,12 @@ public unsafe class SwapChain
             Renderer.brush2dFill?.Dispose();
             Renderer.textFormat?.Dispose();
             writeFactory?.Dispose();
+            
+            if (Renderer.contextErrorScreen != null)
+                Renderer.contextErrorScreen.Target = null;
             bitmapErrorMessage?.Dispose();
+            bitmapErrorMessage = null;
+
             Renderer.bitmapErrorImage?.Dispose();
             Renderer.bitmapErrorImage = null;
             Renderer.errorBitmap?.Dispose();
@@ -455,7 +460,7 @@ public unsafe class SwapChain
     {   // Externally used when a WndProc hook is not available (e.g. WinUI)
         controlWidth    = width;
         controlHeight   = height;
-        Log.Debug($"[SC] Resize({width}, {height}), hwnd {ControlHwnd}, vp.ControlWidth {vp.ControlWidth}, {controlHeight}");
+        Log.Debug($"[SC] Resize({width}, {height}), hwnd {ControlHwnd}, ControlWidth {controlWidth}, {controlHeight}, vp size {vp.ControlWidth}x{vp.ControlHeight}");
         CanPresent = controlWidth > 0 && controlHeight > 0;
         if (controlWidth != vp.ControlWidth || controlHeight != vp.ControlHeight) // TBR: It will not refresh on restore from minimize (same sizes)
             vp.VPRequest(VPRequestType.Resize);
@@ -495,6 +500,12 @@ public unsafe class SwapChain
             bitmap2d.Dispose();
         }
 
+        if (bitmapErrorMessage != null)
+        {
+            Renderer.contextErrorScreen.Target = null;
+            bitmapErrorMessage.Dispose();
+        }
+
         bbRtv.  Dispose();
         bb.     Dispose();
         sc.     ResizeBuffers(0, (uint)vp.ControlWidth, (uint)vp.ControlHeight, Format.Unknown, SwapChainFlags.None);
@@ -506,6 +517,13 @@ public unsafe class SwapChain
             using var surface = bb.QueryInterface<IDXGISurface>();
             bitmap2d = context2d.CreateBitmapFromDxgiSurface(surface, bitmapProps2d);
             context2d.Target = bitmap2d;
+        }
+
+        if (Renderer.contextErrorScreen != null)
+        {
+            using var surface = bb.QueryInterface<IDXGISurface>();
+            bitmapErrorMessage = Renderer.contextErrorScreen.CreateBitmapFromDxgiSurface(surface, bitmapPropsErrorMessage);
+            Renderer.contextErrorScreen.Target = bitmapErrorMessage;
         }
     }
 

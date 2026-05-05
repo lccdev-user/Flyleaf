@@ -82,14 +82,10 @@ public unsafe partial class Renderer
         try
         {
             lastRenderAt = DateTime.UtcNow.Ticks;
-            if(ErrorScreenEnabled && SwapChain.CanPresent)
+            if(CustomProcessingIsRequiredToDisplayError())
             {
-                Log.Debug($"RenderIdle: canPresent {SwapChain.CanPresent}");
-                context.OMSetRenderTargets(SwapChain.BackBufferRtv);
-                context.ClearRenderTargetView(SwapChain.BackBufferRtv, ucfg.flBackColor);
-
-                ShowErrorScreen();
-                SwapChain.Present(1, PresentFlags.None);
+                Log.Debug($"RenderIdle: custom error processing is required, size {ControlWidth}x{ControlHeight}");
+                DisplayErrorImageProcessRequest();
                 return true;
             }
             if (!SwapChain.CanPresent || scfg is null)
