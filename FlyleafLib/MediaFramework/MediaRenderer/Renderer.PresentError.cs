@@ -111,7 +111,7 @@ public  partial class Renderer
             {
                 bitmap.UnlockBits(bitmapData);
             }
-        }        
+        }
     }
     internal void ShowErrorScreen(bool force = false)
     {
