@@ -58,6 +58,8 @@ public  partial class Renderer
         }
     }
 
+    public int ErrorCode { get; set; }
+
 
     private void SetErrorImageField(Bitmap bitmap)
     {
