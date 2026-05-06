@@ -1,11 +1,8 @@
 using FlyleafLib.MediaPlayer;
-using System;
-using System.CodeDom;
 using System.Runtime.InteropServices;
 using Vortice.D3DCompiler;
 using Vortice.Direct3D;
 using Vortice.Direct3D11;
-using Vortice.DXGI;
 using Vortice.Mathematics;
 using Vortice.Wpf;
 using ID3D11Device = Vortice.Direct3D11.ID3D11Device;
@@ -48,6 +45,7 @@ namespace FlyleafLib.Zoom
 
         private ID3D11VertexShader    _vertexShader;
         private ID3D11PixelShader     _pixelShader;
+        private ID3D11PixelShader     _pixelShaderWithZoomBox;
         private ID3D11Buffer          _cbViewport;
         private ID3D11SamplerState    _sampler;
         private ID3D11RasterizerState _rasterizer;
@@ -134,7 +132,8 @@ float4 main(PSIn i) : SV_TARGET
             ControlHeight = miniHeight;
 
             var uniqueId =  GetUniqueId();
-            Log = new(("[#" + uniqueId + "]").PadRight(8, ' ') + " [ZOVRenderer    ] ");
+            Log = new(("[#" + _player.PlayerId + "]").PadRight(8, ' ') + " [ZOVRenderer    ] ");
+            Log.Debug($"new zoom overview renderer #{_player.PlayerId} created");
         }
 
         /// <summary>
@@ -143,8 +142,9 @@ float4 main(PSIn i) : SV_TARGET
         public void InitializeD3Resource(DrawingSurface surface)
         {
             if (IsInitialized) return;
-
+            
             _device = surface.ColorTexture?.Device;
+            Log.Debug($"InitializeD3Resource: device {(_device is null ? "null" : "set")}");
             if (_device is null)
                 return;
             _context = _device.ImmediateContext;
@@ -180,6 +180,7 @@ float4 main(PSIn i) : SV_TARGET
 
             if (descTarget.Width != ControlWidth || descTarget.Height != ControlHeight)
             {
+                Log.Debug($"RenderIntoTexture: target size {descTarget.Width}x{descTarget.Height}");
                 UpdateSize((int)descTarget.Width, (int)descTarget.Height);
             }
             lock (_lockRecreatedResources)
@@ -196,7 +197,12 @@ float4 main(PSIn i) : SV_TARGET
                 _context.ClearRenderTargetView(rtv, new Color4(0f, 0f, 0f, 1f));
 
                 _context.VSSetShader(_vertexShader);
-                _context.PSSetShader(_pixelShader);
+
+                if (_showZoomBox)
+                    _context.PSSetShader(_pixelShaderWithZoomBox);
+                else
+                    _context.PSSetShader(_pixelShader);
+
                 _context.PSSetShaderResource(0, _sharedSrv);
                 _context.PSSetSampler(0, _sampler);
 
@@ -214,22 +220,20 @@ float4 main(PSIn i) : SV_TARGET
         // Pipeline-Setup
         private void CompileShaders()
         {
+            Log.Debug("CompileShaders");
             var vsBlob = Compiler.Compile(VSSrc, "main", "vs", "vs_5_0");
             _vertexShader = _device.CreateVertexShader(vsBlob.Span);
 
-            if (_showZoomBox)
-            {
-                var psBlob = Compiler.Compile(PSSrc, "main", "ps", "ps_5_0");
-                _pixelShader = _device.CreatePixelShader(psBlob.Span);
-            }
-            else
-            {
-                var psBlob = Compiler.Compile(PSSrc, "main", "ps_simple", "ps_5_0");
-                _pixelShader = _device.CreatePixelShader(psBlob.Span);
-            }
+            
+            var psBlob = Compiler.Compile(PSSrc, "main", "ps", "ps_5_0");
+            _pixelShaderWithZoomBox = _device.CreatePixelShader(psBlob.Span);
+
+            psBlob = Compiler.Compile(PSSrc, "main", "ps_simple", "ps_5_0");
+            _pixelShader = _device.CreatePixelShader(psBlob.Span);
         }
         private void CreateSamplerAndStates()
         {
+            Log.Debug("CreateSamplerAndStates");
             _sampler = _device.CreateSamplerState(new SamplerDescription
             {
                 Filter   = Filter.MinMagMipLinear,
@@ -243,6 +247,7 @@ float4 main(PSIn i) : SV_TARGET
 
         private void CreateConstantBuffer()
         {
+            Log.Debug("CreateConstantBuffer");
             _cbViewport = _device.CreateBuffer(new BufferDescription
             {
                 ByteWidth = (uint)Marshal.SizeOf<CbViewport>(),
@@ -254,6 +259,9 @@ float4 main(PSIn i) : SV_TARGET
 
         private void RecreateShadersAndConstantBuffer()
         {
+            Log.Debug($"RecreateShadersAndConstantBuffer: is initialized {IsInitialized}");
+            if (!IsInitialized) return;
+
             lock (_lockRecreatedResources)
             {
                 _cbViewport?.Dispose();
@@ -345,6 +353,9 @@ float4 main(PSIn i) : SV_TARGET
             if (_disposed) return;
             _disposed = true;
 
+            _device = null;
+            _context = null;
+
             _sharedSrv?.Dispose();
             _sharedSrv = null;
             _sharedTex?.Dispose();
@@ -396,6 +407,7 @@ float4 main(PSIn i) : SV_TARGET
         }
         internal void UpdateSize(int actualWidth, int actualHeight)
         {
+            Log.Debug($"UpdateSize({actualWidth}, {actualHeight})");
             ControlWidth = actualWidth;
             ControlHeight = actualHeight;
             SetViewport(ControlWidth, ControlHeight);

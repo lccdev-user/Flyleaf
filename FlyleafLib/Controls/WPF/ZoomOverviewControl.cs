@@ -4,37 +4,46 @@ using System.ComponentModel;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Xml;
 using Vortice.Wpf;
 
 namespace FlyleafLib.Controls.WPF;
 
 /// <summary>
-///ZoomOverlayControl - WPF control for the zoom minimap..
+///ZoomOverviewControl - WPF control for the zoom minimap..
 ///
 /// XAML-Verwendung:
-///   <zoom:ZoomOverlayControl x:Name="Minimap"
+///   <zoom:ZoomOverviewControl x:Name="Minimap"
 ///       HorizontalAlignment="Right" VerticalAlignment="Bottom"
 ///       Margin="0,0,16,16" Panel.ZIndex="10" />
 ///
 ///   // Code-behind nach Player-Open:
 ///   Minimap.BindPlayer(player);
 /// </summary>
-public sealed class ZoomOverlayControl : FrameworkElement, IDisposable
+public sealed class ZoomOverviewControl : FrameworkElement, IDisposable
 {
-	// Dependency Properties
-	public static readonly DependencyProperty ShowWhenZoomOutProperty =
+    private static readonly Type playerType = typeof(Player);
+    private static readonly Type flType = typeof(ZoomOverviewControl);
+
+    // Dependency Properties
+    public static readonly DependencyProperty ShowWhenZoomOutProperty =
 			DependencyProperty.Register(nameof(ShowWhenZoomOut), typeof(bool),
-				typeof(ZoomOverlayControl), new PropertyMetadata(false));
+				typeof(ZoomOverviewControl), new PropertyMetadata(false));
 
     public static readonly DependencyProperty ShowZoomBoxProperty =
             DependencyProperty.Register(nameof(ShowZoomBox), typeof(bool),
-                typeof(ZoomOverlayControl), new PropertyMetadata(true,
+                typeof(ZoomOverviewControl), new PropertyMetadata(true,
                     OnShowZoomBoxChanged));
-	
-	public bool ShowWhenZoomOut { get => (bool)GetValue(ShowWhenZoomOutProperty); set => SetValue(ShowWhenZoomOutProperty, value); }
+
+    public static readonly DependencyProperty PlayerProperty =
+        DependencyProperty.Register(nameof(Player), playerType, flType, new(null, OnPlayerChanged));
+
+    public Player Player { get => (Player)GetValue(PlayerProperty); set => SetValue(PlayerProperty, value); }
+    public bool ShowWhenZoomOut { get => (bool)GetValue(ShowWhenZoomOutProperty); set => SetValue(ShowWhenZoomOutProperty, value); }
     public bool ShowZoomBox { get => (bool)GetValue(ShowZoomBoxProperty); set => SetValue(ShowZoomBoxProperty, value);  }
 
-	private DrawingSurface        _surface;           
+    internal LogHandler Log;
+    private DrawingSurface        _surface;           
 	private ZoomOverviewRenderer  _renderer;
 	private Player                _player;
 	private bool                  _initialized;
@@ -44,21 +53,21 @@ public sealed class ZoomOverlayControl : FrameworkElement, IDisposable
 	// Click-to-pan drag state
 	private bool  _isDragging;
 
-	public ZoomOverlayControl()
-	{	
-		_surface = new DrawingSurface();
-		_surface.Draw += OnDrawingSurfaceRender;
+	public ZoomOverviewControl()
+	{
+        InitSurface();
 
-		AddVisualChild(_surface);
-
-		// Mouse interaction
-		_surface.MouseLeftButtonDown += OnMouseDown;
-		_surface.MouseLeftButtonUp += OnMouseUp;
-		_surface.MouseMove += OnMouseMove;
+        Loaded += OnLoaded;
+        Unloaded += OnUnloaded;
         SizeChanged += OnSizeChanged;
-		// Clip to bounds (rounded corners done via a clip geometry)
-		ClipToBounds = true;
-	}
+
+        // Clip to bounds (rounded corners done via a clip geometry)
+        ClipToBounds = true;
+
+        var uniqueId =  GetUniqueId();
+        Log = new(("[#" + uniqueId + "]").PadRight(8, ' ') + " [ZOVC    ] ");
+        Log.Debug($"new zoom overview control #{uniqueId} created");
+    }
 
     /// <summary>
     /// Connects the control to a FlyleafLib player.
@@ -70,14 +79,14 @@ public sealed class ZoomOverlayControl : FrameworkElement, IDisposable
 			return;
 		_player = player ?? throw new ArgumentNullException(nameof(player));
 
-		
-		_renderer = new ZoomOverviewRenderer(player, (int)ActualWidth, (int)ActualHeight);
+        Log.Debug($"Bind player #{_player.PlayerId} with zoom overview control");
+        _renderer = new ZoomOverviewRenderer(player, (int)ActualWidth, (int)ActualHeight);
 		_renderer.InitializeD3Resource(_surface);   // neue, vereinfachte Init-Variante
         _renderer.ShowZoomBox = ShowZoomBox;
-		// Update-Trigger
 
-		CompositionTarget.Rendering += OnCompositionRendering;
-		player.Config.Video.PropertyChanged += ZoomOverviewPropertyChanged;
+        // Update-Trigger
+        CompositionTarget.Rendering += OnCompositionRendering;
+        player.Config.Video.PropertyChanged += ZoomOverviewPropertyChanged;
 
 		UpdateVisibility();
 		_initialized = true;
@@ -92,12 +101,17 @@ public sealed class ZoomOverlayControl : FrameworkElement, IDisposable
 		if (!_initialized || _disposed)
 			return;
 
-		_initialized = false;
-		if (_player is not null)
-			_player.Config.Video.PropertyChanged -= ZoomOverviewPropertyChanged;
-		_player = null;
+        Log.Debug($"Unbind player from zoom overview control");
+        _initialized = false;
 
-		_renderer?.Dispose();
+        CompositionTarget.Rendering -= OnCompositionRendering;
+
+        if (_player is not null)
+			_player.Config.Video.PropertyChanged -= ZoomOverviewPropertyChanged;
+
+        _player = null;
+
+        _renderer?.Dispose();
 		_renderer = null;
 		_needSurfaceCleaning = true;
 	}
@@ -115,6 +129,49 @@ public sealed class ZoomOverlayControl : FrameworkElement, IDisposable
 			RequestRender();
 		}
 	}
+
+    private void SetPlayer(Player oldPlayer)
+    {
+        Log.Debug("SetPlayer()");
+        if (oldPlayer != null)
+            UnbindPlayer();
+
+        if (Player == null)
+            return;
+
+        InitSurface();
+        BindPlayer(Player);
+    }
+
+    private void InitSurface()
+    {
+        _surface = new DrawingSurface();
+        _surface.Draw += OnDrawingSurfaceRender;
+
+        AddVisualChild(_surface);
+
+        // Mouse interaction
+        _surface.MouseLeftButtonDown += OnMouseDown;
+        _surface.MouseLeftButtonUp += OnMouseUp;
+        _surface.MouseMove += OnMouseMove;
+    }
+
+    private void DisposeSurface()
+    {
+        Log.Debug($"Dispose: disposed {_disposed}");
+        if (_surface != null)
+        {
+            RemoveVisualChild(_surface);
+
+            _surface.Draw -= OnDrawingSurfaceRender;
+            _surface.MouseLeftButtonDown -= OnMouseDown;
+            _surface.MouseLeftButtonUp -= OnMouseUp;
+            _surface.MouseMove -= OnMouseMove;
+        }
+
+        (_surface as IDisposable)?.Dispose();
+        _surface = null;
+    }
 
     //  DrawingSurface.Draw Callback
     /// <summary>
@@ -145,6 +202,8 @@ public sealed class ZoomOverlayControl : FrameworkElement, IDisposable
 	{
 		if (!_initialized || _disposed)
 			return;
+        if ((bool)!_renderer?.IsInitialized)
+            _renderer?.InitializeD3Resource(_surface);
 		RequestRender();
 	}
 
@@ -168,13 +227,17 @@ public sealed class ZoomOverlayControl : FrameworkElement, IDisposable
 	//  DependencyProperty Callback
 	private static void OnShowZoomBoxChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
-        var ctrl = (ZoomOverlayControl)d;
-        if (ctrl._renderer is not null)
+        var ctrl = (ZoomOverviewControl)d;
+        if (ctrl._renderer is not null && ctrl._initialized)
             ctrl._renderer.ShowZoomBox = (bool)e.NewValue;
     }
 
-	//  Click-to-pan
-	private void OnMouseDown(object sender, MouseButtonEventArgs e)
+    private static void OnPlayerChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+        => ((ZoomOverviewControl)d).SetPlayer((Player)e.OldValue);
+
+
+    //  Click-to-pan
+    private void OnMouseDown(object sender, MouseButtonEventArgs e)
 	{
 		if (_player == null)
 			return;
@@ -208,6 +271,20 @@ public sealed class ZoomOverlayControl : FrameworkElement, IDisposable
 		_player.Config.Video.PanYOffset = -panY;
 	}
 
+    private void OnLoaded(object sender, RoutedEventArgs e)
+    {
+        Log.Debug($"ZoomOverviewControl: Loaded, player {(Player is Player ? "set" : "null")}");
+        if (Player != null)
+            BindPlayer(Player);
+    }
+
+    private void OnUnloaded(object sender, RoutedEventArgs e)
+    {
+        Log.Debug($"ZoomOverviewControl: OnUnloaded, {(Player is Player ? "set" : "null")}");
+        if (Player != null)
+            UnbindPlayer();
+    }
+
     private void OnSizeChanged(object sender, SizeChangedEventArgs e)
     {
         _surface?.InvalidateMeasure();
@@ -234,16 +311,15 @@ public sealed class ZoomOverlayControl : FrameworkElement, IDisposable
 	//  IDisposable
 	public void Dispose()
 	{
+        Log.Debug($"Dispose: disposed {_disposed}");
 		if (_disposed)
 			return;
-		_disposed = true;
 
-		CompositionTarget.Rendering -= OnCompositionRendering;
-
-		_surface.Draw -= OnDrawingSurfaceRender;
-		
-		(_surface as IDisposable)?.Dispose();
+        UnbindPlayer();
+        DisposeSurface();
+        _disposed = true;
 
 		_renderer?.Dispose();
+        _renderer = null;
 	}
 }
