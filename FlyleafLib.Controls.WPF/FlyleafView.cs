@@ -1,11 +1,10 @@
+using FlyleafLib.MediaPlayer;
 using System;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
-
-using FlyleafLib.MediaPlayer;
 
 namespace FlyleafLib.Controls.WPF;
 

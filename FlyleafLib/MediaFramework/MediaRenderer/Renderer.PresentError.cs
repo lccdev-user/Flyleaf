@@ -31,11 +31,11 @@ public  partial class Renderer
             if (errorScreenEnabled != value)
             {
                 if (value)
-                    SwapChain.SetupErrorScreenContext();
+                    SwapChain?.SetupErrorScreenContext();
                 else
                 {
                     ErrorMessage = string.Empty;
-                    SwapChain.DisposeErrorScreenContext();
+                    SwapChain?.DisposeErrorScreenContext();
                 }
                 errorScreenEnabled = value;
             }
@@ -74,6 +74,8 @@ public  partial class Renderer
     {
         lock (lockDevice)
         {
+            if (contextErrorScreen != null)
+                contextErrorScreen.Target = null;
             bitmapErrorImage?.Dispose();
             bitmapErrorImage = null;
             errorBitmap?.Dispose();
@@ -111,7 +113,7 @@ public  partial class Renderer
             }
         }
     }
-    private void ShowErrorScreen(bool force = false)
+    internal void ShowErrorScreen(bool force = false)
     {
         if (force)
         {
@@ -214,7 +216,6 @@ public  partial class Renderer
         int sideX, sideY;
 
         Viewport viewport = Viewport;
-
         if (Viewport.Width == 0 || viewport.Height == 0 )
         {
             viewport.X = 0;
@@ -291,5 +292,41 @@ public  partial class Renderer
         }
     }
 
+    private void DisplayErrorImageProcessRequest()
+    {
+        vpRequests = vpRequestsIn;
+        vpRequestsIn = VPRequestType.Empty;
+
+        if (VideoProcessor == VideoProcessors.D3D11)
+        {
+            vpRequests = vpRequestsIn;
+
+            if (vpRequests.HasFlag(VPRequestType.Resize))
+                D3SetSize();
+
+            if (vpRequests.HasFlag(VPRequestType.AspectRatio))
+                SetAspectRatio();
+
+            if (vpRequests.HasFlag(VPRequestType.Viewport))
+                D3SetViewport(ControlWidth, ControlHeight);
+        }
+        else
+        {
+            if (vpRequests.HasFlag(VPRequestType.Resize))
+                SetSize();
+
+            if (vpRequests.HasFlag(VPRequestType.AspectRatio))
+                SetAspectRatio();
+
+            if (vpRequests.HasFlag(VPRequestType.Viewport))
+                FLSetViewport();
+        }
+
+        context.OMSetRenderTargets(SwapChain.BackBufferRtv);
+        context.ClearRenderTargetView(SwapChain.BackBufferRtv, ucfg.flBackColor);
+        if (ErrorScreenEnabled)
+            ShowErrorScreen();
+        SwapChain.Present(1, PresentFlags.None);
+    }
 }
 #nullable disable

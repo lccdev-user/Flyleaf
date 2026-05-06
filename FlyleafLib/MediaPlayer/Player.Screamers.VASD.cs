@@ -1,7 +1,6 @@
-﻿using Vortice.Direct3D11;
-
+﻿using FlyleafLib.Custom;
 using FlyleafLib.MediaFramework.MediaDecoder;
-using FlyleafLib.Custom;
+using Vortice.Direct3D11;
 
 namespace FlyleafLib.MediaPlayer;
 
@@ -228,6 +227,9 @@ unsafe partial class Player
            StopScreamerVASDAudio();
 
            decoder.GetVideoFrame(ms * 10000);
+
+           if (Renderer.ErrorScreenEnabled)
+                Renderer.RenderRequest();
         }
 
         while (status == Status.Playing)
@@ -423,8 +425,8 @@ unsafe partial class Player
             // Present Current | Render Next
             if (!refreshed)
             {
-                if (CanTrace) Log.Trace($"[V] Presenting {TicksToTime(vFrame.Timestamp)}{(secondField ? " | SF" : "")}, frameTime {VideoDemuxer.ToCustomTimestamp(vFrame.Timestamp / 1000)}");
-                if (!VideoDemuxer.SkipFrameBySearch(VideoDemuxer.ToCustomTimestamp(vFrame.Timestamp / 1000)))
+                if (CanTrace) Log.Trace($"[V] Presenting #{vFrame.Id}, ts {TicksToTime(vFrame.Timestamp)}{(secondField ? " | SF" : "")}, frameTime {VideoDemuxer.ToCustomTimestamp(vFrame.Timestamp / 10_000)}");
+                if (!VideoDemuxer.SkipFrameBySearch(VideoDemuxer.ToCustomTimestamp(vFrame.Timestamp / Ticks.InOneMillisecond)))
                 {
                     if (Renderer.PresentPlay())
                     {
@@ -437,9 +439,10 @@ unsafe partial class Player
             }
             else
                 refreshed = false;
-            if (VideoDemuxer.IsSearchCompleted(VideoDemuxer.ToCustomTimestamp(vFrame.Timestamp / 1000)))
+            
+            if (VideoDemuxer.IsSearchCompleted(VideoDemuxer.ToCustomTimestamp(vFrame.Timestamp / Ticks.InOneMillisecond)))
             {
-                Log.Debug($"PlayVASD - search completed, showCnt {showFrameCount}, displayed {framesDisplayed}");
+                if (CanDebug) Log.Debug($"PlayVASD - search completed, showCnt {showFrameCount}, displayed {framesDisplayed}");
                 status = Status.Paused;
                 break;
             }
