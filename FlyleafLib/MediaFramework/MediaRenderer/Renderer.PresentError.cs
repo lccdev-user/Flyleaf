@@ -124,25 +124,22 @@ public  partial class Renderer
                 if (SwapChain.Disposed)
                     return;
 
-                lock (lockRenderLoops)
-                {
-                    SubsDispose();
-                    context.OMSetRenderTargets(SwapChain.BackBufferRtv);
-                    context.ClearRenderTargetView(SwapChain.BackBufferRtv, ucfg.flBackColor);
+                SubsDispose();
+                context.OMSetRenderTargets(SwapChain.BackBufferRtv);
+                context.ClearRenderTargetView(SwapChain.BackBufferRtv, ucfg.flBackColor);
 
-                    try
+                try
+                {
+                    if (ErrorScreenEnabled)
                     {
-                        if (ErrorScreenEnabled)
-                        {
-                            if (errorBitmap != null && bitmapErrorImage == null)
-                                SetErrorImage(errorBitmap);
-                            DrawErrorScreen();
-                        }
+                        if (errorBitmap != null && bitmapErrorImage == null)
+                            SetErrorImage(errorBitmap);
+                        DrawErrorScreen();
                     }
-                    catch (Exception ex)
-                    {
-                        Log.Error(ex.Message);
-                    }
+                }
+                catch (Exception ex)
+                {
+                    Log.Error(ex.Message);
                 }
                 SwapChain.Present(1, PresentFlags.None);
             }

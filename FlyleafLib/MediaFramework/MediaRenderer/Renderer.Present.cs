@@ -106,7 +106,9 @@ public unsafe partial class Renderer
 
                     if (Frames.RendererFrame != null && !ErrorScreenEnabled)
                     {
-                        D3Render(Frames.RendererFrame, false); needsClear = false; RenderChild?.Invoke(Frames.RendererFrame);
+                        D3Render(Frames.RendererFrame, false);
+                        needsClear = false;
+                        RenderChild?.Invoke(Frames.RendererFrame);
                     }
                 }
                 else
@@ -117,7 +119,11 @@ public unsafe partial class Renderer
                         return RenderIdle();
 
                     if (Frames.RendererFrame != null && !ErrorScreenEnabled)
-                        { FLRender(Frames.RendererFrame); needsClear = false; RenderChild?.Invoke(Frames.RendererFrame); }
+                    {
+                        FLRender(Frames.RendererFrame);
+                        needsClear = false;
+                        RenderChild?.Invoke(Frames.RendererFrame);
+                    }
                 }
 
                 CustomProcessRequests?.Invoke();
@@ -131,7 +137,7 @@ public unsafe partial class Renderer
                     //SubsDispose();
                     context.OMSetRenderTargets(SwapChain.BackBufferRtv);
                     context.ClearRenderTargetView(SwapChain.BackBufferRtv, ucfg.flBackColor);
-                    
+
                     ShowErrorScreen();
                 }
             }
