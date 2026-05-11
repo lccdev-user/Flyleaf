@@ -82,12 +82,6 @@ public unsafe partial class Renderer
         try
         {
             lastRenderAt = DateTime.UtcNow.Ticks;
-            if(CustomProcessingIsRequiredToDisplayError())
-            {
-                Log.Debug($"RenderIdle: custom error processing is required, size {ControlWidth}x{ControlHeight}");
-                DisplayErrorImageProcessRequest();
-                return true;
-            }
             if (!SwapChain.CanPresent || scfg is null)
                 return true;
 
@@ -104,7 +98,7 @@ public unsafe partial class Renderer
                     if (!d3CanPresent)
                         return true;
 
-                    if (Frames.RendererFrame != null && !ErrorScreenEnabled)
+                    if (Frames.RendererFrame != null)
                     {
                         D3Render(Frames.RendererFrame, false);
                         needsClear = false;
@@ -118,7 +112,7 @@ public unsafe partial class Renderer
                     if (VideoProcessor == VideoProcessors.D3D11)
                         return RenderIdle();
 
-                    if (Frames.RendererFrame != null && !ErrorScreenEnabled)
+                    if (Frames.RendererFrame != null)
                     {
                         FLRender(Frames.RendererFrame);
                         needsClear = false;
@@ -127,18 +121,16 @@ public unsafe partial class Renderer
                 }
 
                 CustomProcessRequests?.Invoke();
-                needsClear = CustomProcessRequests == null && needsClear || ErrorScreenEnabled;
+                needsClear = CustomProcessRequests == null && needsClear;
 
                 if (needsClear)
                 {
-                    if (!Config.Video.ClearScreen && !ErrorScreenEnabled)
+                    if (!Config.Video.ClearScreen)
                         return true;
 
                     //SubsDispose();
                     context.OMSetRenderTargets(SwapChain.BackBufferRtv);
                     context.ClearRenderTargetView(SwapChain.BackBufferRtv, ucfg.flBackColor);
-
-                    ShowErrorScreen();
                 }
             }
             SwapChain.Present(1, PresentFlags.None);

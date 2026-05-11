@@ -4,13 +4,10 @@ using System.Windows;
 using Vortice.Direct2D1;
 using Vortice.Direct3D11;
 using Vortice.DirectComposition;
-using Vortice.DirectWrite;
 using Vortice.DXGI;
-using Vortice.Mathematics;
 using static FlyleafLib.Utils.NativeMethods;
 using FrameStatistics = Vortice.DXGI.FrameStatistics;
 using ID3D11Texture2D = Vortice.Direct3D11.ID3D11Texture2D;
-using TextAlignment = Vortice.DirectWrite.TextAlignment;
 
 namespace FlyleafLib.MediaFramework.MediaRenderer;
 
@@ -47,15 +44,6 @@ public unsafe class SwapChain
     Action<IDXGISwapChain2>
                         WinUIClbk;
     Action              beforePresentCallbacks;
-
-    //Present Error
-    ID2D1Bitmap1          bitmapErrorMessage;
-    IDWriteFactory        writeFactory;
-    BitmapProperties1     bitmapPropsErrorMessage = new()
-    {
-        BitmapOptions   = BitmapOptions.Target | BitmapOptions.CannotDraw,
-        PixelFormat     = Vortice.DCommon.PixelFormat.Premultiplied
-    };
 
     bool                isCornerRadiusEmpty = true;
     IVP                 vp;
@@ -276,73 +264,6 @@ public unsafe class SwapChain
         }
     }
 
-    internal void SetupErrorScreenContext()
-    {
-        if (Renderer.deviceErrorScreen is not null) return;
-        Log.Debug("SetupErrorScreenContext()");
-
-        lock (Renderer.lockDevice)
-        {
-            using (var mthread = Renderer.Device.QueryInterface<ID3D11Multithread>())
-                mthread.SetMultithreadProtected(true);
-            using (var dxgidevice = Renderer.Device.QueryInterface<IDXGIDevice1>())
-            {
-                Renderer.deviceErrorScreen = D2D1.D2D1CreateDevice(dxgidevice);
-                Renderer.contextErrorScreen = Renderer.deviceErrorScreen.CreateDeviceContext();
-
-                if (bb != null)
-                {
-                    using var surface = bb.QueryInterface<IDXGISurface>();
-                    bitmapErrorMessage = Renderer.contextErrorScreen.CreateBitmapFromDxgiSurface(surface, bitmapPropsErrorMessage);
-                    Renderer.contextErrorScreen.Target = bitmapErrorMessage;
-                }
-
-                if (Renderer.errorBitmap != null)
-                {
-                    Renderer.SetErrorImage(Renderer.errorBitmap);
-                }
-
-                Renderer.brush2dFill = Renderer.contextErrorScreen.CreateSolidColorBrush(new Color(0, 128, 0));
-                Renderer.brush2dText = Renderer.contextErrorScreen.CreateSolidColorBrush(new Color(234, 234, 234));
-
-                // Create DirectWrite factory and text format
-                writeFactory = DWrite.DWriteCreateFactory<IDWriteFactory>();
-                Renderer.textFormat = writeFactory.CreateTextFormat("Arial", 36.0f);
-                Renderer.textFormat.TextAlignment = TextAlignment.Center;
-                Renderer.textFormat.WordWrapping = WordWrapping.Wrap;
-            }
-        }
-
-        Renderer.ucfg.ResetViewport();
-    }
-
-    internal void DisposeErrorScreenContext()
-    {
-        Log.Debug("DisposeErrorScreenContext()");
-        lock (Renderer.lockDevice)
-        {
-            Renderer.brush2dText?.Dispose();
-            Renderer.brush2dFill?.Dispose();
-            Renderer.textFormat?.Dispose();
-            writeFactory?.Dispose();
-            
-            if (Renderer.contextErrorScreen != null)
-                Renderer.contextErrorScreen.Target = null;
-            bitmapErrorMessage?.Dispose();
-            bitmapErrorMessage = null;
-
-            Renderer.bitmapErrorImage?.Dispose();
-            Renderer.bitmapErrorImage = null;
-            Renderer.errorBitmap?.Dispose();
-            Renderer.errorBitmap = null;
-            Renderer.contextErrorScreen?.Dispose();
-            Renderer.deviceErrorScreen = null;
-            Renderer.deviceErrorScreen?.Dispose();
-            Renderer.contextErrorScreen = null;
-        }
-    }
-
-
     public void Dispose(bool rendererFrame = true)
     {   // External calls will not allow re-creation of previous swap chain | During swap players we keep rendererFrame alive
         lock (Renderer.lockDevice)
@@ -500,12 +421,6 @@ public unsafe class SwapChain
             bitmap2d.Dispose();
         }
 
-        if (bitmapErrorMessage != null)
-        {
-            Renderer.contextErrorScreen.Target = null;
-            bitmapErrorMessage.Dispose();
-        }
-
         bbRtv.  Dispose();
         bb.     Dispose();
         sc.     ResizeBuffers(0, (uint)vp.ControlWidth, (uint)vp.ControlHeight, Format.Unknown, SwapChainFlags.None);
@@ -517,13 +432,6 @@ public unsafe class SwapChain
             using var surface = bb.QueryInterface<IDXGISurface>();
             bitmap2d = context2d.CreateBitmapFromDxgiSurface(surface, bitmapProps2d);
             context2d.Target = bitmap2d;
-        }
-
-        if (Renderer.contextErrorScreen != null)
-        {
-            using var surface = bb.QueryInterface<IDXGISurface>();
-            bitmapErrorMessage = Renderer.contextErrorScreen.CreateBitmapFromDxgiSurface(surface, bitmapPropsErrorMessage);
-            Renderer.contextErrorScreen.Target = bitmapErrorMessage;
         }
     }
 
