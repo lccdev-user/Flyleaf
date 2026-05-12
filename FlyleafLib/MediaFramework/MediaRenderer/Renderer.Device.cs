@@ -103,10 +103,6 @@ public unsafe partial class Renderer : NotifyPropertyChanged
     {
         DisposeLocal();
 
-        ErrorScreenEnabled = false;
-        errorBitmap?.Dispose();
-        errorBitmap = null;
-
         if (CanDebug) Log.Debug("Initializing");
 
         DeviceCreationFlags debugFlag = DeviceCreationFlags.None;
@@ -122,7 +118,7 @@ public unsafe partial class Renderer : NotifyPropertyChanged
             forceWarp = true;
             Log.Error($"Initialization failed ({result.NativeApiCode}). Failling back to WARP device.");
         }
-        
+
         // Forced or Fallback to WARP
         if (forceWarp)
             if ((result = D3D11.D3D11CreateDevice(null, DriverType.Warp, debugFlag, featureLevels, out device)).Failure)
@@ -165,7 +161,7 @@ public unsafe partial class Renderer : NotifyPropertyChanged
             {
                 DXGIAdapter.Dispose();
                 DXGIAdapter = GPUAdapter.dxgiAdapter;
-            }   
+            }
         }
 
         if (ucfg.Use2DGraphics)
@@ -195,16 +191,8 @@ public unsafe partial class Renderer : NotifyPropertyChanged
         var wasPlaying  = pausePlayer && player != null && player.Status == MediaPlayer.Status.Playing;
         var wasRunning  = !fromDecoder && VideoDecoder.IsRunning;
         var hadSC       = !SwapChain.Disposed;
-        var wasError    = ErrorScreenEnabled;
-        
-        isDeviceReset = true;
 
-        if(wasError)
-        {
-            ErrorScreenEnabled = false;
-            ErrorImage = null;
-            RenderRequest(null, true);
-        }
+        isDeviceReset = true;
 
         // Stop loops (Play or Idle)
         if (wasPlaying)
@@ -244,7 +232,7 @@ public unsafe partial class Renderer : NotifyPropertyChanged
         {
             if (Disposed)
                 return;
-            
+
             if (CanDebug) Log.Debug("Disposing");
 
             Disposed = true;
@@ -255,7 +243,7 @@ public unsafe partial class Renderer : NotifyPropertyChanged
                 player?.Pause();
                 VideoDecoder.Dispose();
             }
-            
+
             SwapChain.DisposeLocal();
             if (!isDeviceReset)
                 RenderIdleStop(); // Ensures it didn't start again (after CanPresent = false)
@@ -270,7 +258,7 @@ public unsafe partial class Renderer : NotifyPropertyChanged
                 context2d?. Dispose();
                 device2d?.  Dispose();
             }
-            
+
             DXGIDevice. Dispose(); DXGIDevice   = null;
             context.    ClearState();
             context.    Flush();

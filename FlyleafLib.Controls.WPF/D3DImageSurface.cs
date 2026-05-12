@@ -58,7 +58,7 @@ internal sealed class D3DImageSurface : IDisposable
         this.controlWidth = controlWidth;
         this.controlHeight = controlHeight;
 
-        Console.WriteLine($"[D3DI] Initialize image={imageWidth}x{imageHeight} control={controlWidth}x{controlHeight} hwnd=0x{focusHwnd:X}");
+        DebugLogger.Print($"[D3DI] Initialize image={imageWidth}x{imageHeight} control={controlWidth}x{controlHeight} hwnd=0x{focusHwnd:X}");
 
         CreateD3D9Device(focusHwnd);
         player.Renderer.SwapChain.RegisterBeforePresentCallback(OnBeforePresent);
@@ -79,7 +79,7 @@ internal sealed class D3DImageSurface : IDisposable
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[D3DI] ProcessPendingPresentation failed: {ex.GetType().Name} {ex.Message}");
+            DebugLogger.Print($"[D3DI] ProcessPendingPresentation failed: {ex.GetType().Name} {ex.Message}");
         }
     }
 
@@ -133,7 +133,7 @@ internal sealed class D3DImageSurface : IDisposable
             if (sharedContexts.TryGetValue(key, out sharedContext))
             {
                 sharedContext.RefCount++;
-                Console.WriteLine($"[D3DI] Reusing D3D9 bridge adapter={sharedContext.Adapter} refs={sharedContext.RefCount}");
+                DebugLogger.Print($"[D3DI] Reusing D3D9 bridge adapter={sharedContext.Adapter} refs={sharedContext.RefCount}");
                 return;
             }
 
@@ -168,7 +168,7 @@ internal sealed class D3DImageSurface : IDisposable
         try
         {
             int generation = System.Threading.Interlocked.Increment(ref callbackGeneration);
-            Console.WriteLine($"[D3DI] OnSwapChainUpdated swapChain={(swapChain != null ? "set" : "null")} gen={generation}");
+            DebugLogger.Print($"[D3DI] OnSwapChainUpdated swapChain={(swapChain != null ? "set" : "null")} gen={generation}");
 
             if (swapChain == null)
             {
@@ -326,7 +326,7 @@ internal sealed class D3DImageSurface : IDisposable
     {
         int count = System.Threading.Interlocked.Increment(ref presentCount);
         if (count <= 5 || count % 60 == 0)
-            Console.WriteLine($"[D3DI] OnBeforePresent #{count} ready={bridgeReady}");
+            DebugLogger.Print($"[D3DI] OnBeforePresent #{count} ready={bridgeReady}");
 
         if (!TryCopyBackBuffer(out int generation, out bool requestPresentation))
             return;
@@ -456,7 +456,7 @@ internal sealed class D3DImageSurface : IDisposable
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[D3DI] FindMatchingD3D9Adapter failed: {ex.Message}");
+            DebugLogger.Print($"[D3DI] FindMatchingD3D9Adapter failed: {ex.Message}");
         }
 
         return 0;
