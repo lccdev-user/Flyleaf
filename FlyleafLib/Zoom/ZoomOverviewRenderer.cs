@@ -1,11 +1,10 @@
+using FlyleafLib.Custom;
 using FlyleafLib.MediaPlayer;
-using System;
-using System.CodeDom;
+using System.Numerics;
 using System.Runtime.InteropServices;
 using Vortice.D3DCompiler;
 using Vortice.Direct3D;
 using Vortice.Direct3D11;
-using Vortice.DXGI;
 using Vortice.Mathematics;
 using Vortice.Wpf;
 using ID3D11Device = Vortice.Direct3D11.ID3D11Device;
@@ -27,14 +26,13 @@ namespace FlyleafLib.Zoom
         public bool ShowZoomBox
         {
             get => _showZoomBox;
-            set {
-                _showZoomBox = value;
-                RecreateShadersAndConstantBuffer();
-            }
+            set { _showZoomBox = value; }
         }
         private bool _showZoomBox;
         public int SideXPixels { get; private set; }
         public int SideYPixels { get; private set; }
+
+        public Action? VideoViewSizeChanged;
 
         // Shared source
         private ID3D11Texture2D          _sharedTex;
@@ -48,6 +46,7 @@ namespace FlyleafLib.Zoom
 
         private ID3D11VertexShader    _vertexShader;
         private ID3D11PixelShader     _pixelShader;
+        private ID3D11PixelShader     _pixelShaderWithZoomBox;
         private ID3D11Buffer          _cbViewport;
         private ID3D11SamplerState    _sampler;
         private ID3D11RasterizerState _rasterizer;
@@ -132,7 +131,7 @@ float4 main(PSIn i) : SV_TARGET
             _player    = player ?? throw new ArgumentNullException(nameof(player));
             ControlWidth  = miniWidth;
             ControlHeight = miniHeight;
-
+    
             var uniqueId =  GetUniqueId();
             Log = new(("[#" + uniqueId + "]").PadRight(8, ' ') + " [ZOVRenderer    ] ");
         }
@@ -144,11 +143,23 @@ float4 main(PSIn i) : SV_TARGET
         {
             if (IsInitialized) return;
 
-            _device = surface.ColorTexture?.Device;
+            var device = surface.ColorTexture?.Device;
+            
+            if (device is null)
+                return;
+            var context = device.ImmediateContext;
+
+            InitializeD3Resource(device, context);
+        }
+
+        public void InitializeD3Resource(ID3D11Device device, ID3D11DeviceContext context)
+        {
+            _device = device;
+            Log.Debug($"InitializeD3Resource: device {(_device is null ? "null" : "set")}, tid {Environment.CurrentManagedThreadId}");
             if (_device is null)
                 return;
-            _context = _device.ImmediateContext;
-
+            _context = context;
+            
             CompileShaders();
             CreateConstantBuffer();
             CreateSamplerAndStates();
@@ -157,6 +168,9 @@ float4 main(PSIn i) : SV_TARGET
                 _frameSource = new DecodedFrameSource(_player.Renderer.Device, _player.VideoDecoder);
 
             IsInitialized = true;
+
+            if (_player is ICustomPlayer custom)
+                custom.OverviewRenderer = this;
         }
 
         // DrawingSurface Render-Callback
@@ -165,9 +179,14 @@ float4 main(PSIn i) : SV_TARGET
         /// </summary>
         public void RenderIntoTexture(ID3D11Texture2D renderTarget, DrawEventArgs args)
         {
-            if (!IsInitialized || _disposed || renderTarget == null) return;
-            _device = renderTarget.Device;
-            _context = _device.ImmediateContext;
+            if (!IsInitialized || _disposed || renderTarget == null || _device is null) return;
+
+            if (_device != renderTarget.Device)
+            {
+                Log.Warn($"D3D11 device changed, tid {Environment.CurrentManagedThreadId}");
+                LocalDispose();
+                InitializeD3Resource(args.Device, args.Context);
+            }
             
             IntPtr handle = _frameSource.SharedTextureHandle;
 
@@ -180,7 +199,8 @@ float4 main(PSIn i) : SV_TARGET
 
             if (descTarget.Width != ControlWidth || descTarget.Height != ControlHeight)
             {
-                UpdateSize((int)descTarget.Width, (int)descTarget.Height);
+                Log.Debug($"RenderIntoTexture: size changed, target size {descTarget.Width}x{descTarget.Height}, control size {ControlWidth}x{ControlHeight}");
+                UpdateSize(args.Surface, (int)descTarget.Width, (int)descTarget.Height);
             }
             lock (_lockRecreatedResources)
             {
@@ -196,7 +216,12 @@ float4 main(PSIn i) : SV_TARGET
                 _context.ClearRenderTargetView(rtv, new Color4(0f, 0f, 0f, 1f));
 
                 _context.VSSetShader(_vertexShader);
-                _context.PSSetShader(_pixelShader);
+
+                if (_showZoomBox)
+                    _context.PSSetShader(_pixelShaderWithZoomBox);
+                else
+                    _context.PSSetShader(_pixelShader);
+
                 _context.PSSetShaderResource(0, _sharedSrv);
                 _context.PSSetSampler(0, _sampler);
 
@@ -216,20 +241,15 @@ float4 main(PSIn i) : SV_TARGET
         {
             var vsBlob = Compiler.Compile(VSSrc, "main", "vs", "vs_5_0");
             _vertexShader = _device.CreateVertexShader(vsBlob.Span);
+                        
+            var psBlob = Compiler.Compile(PSSrc, "main", "ps", "ps_5_0");
+            _pixelShaderWithZoomBox = _device.CreatePixelShader(psBlob.Span);
 
-            if (_showZoomBox)
-            {
-                var psBlob = Compiler.Compile(PSSrc, "main", "ps", "ps_5_0");
-                _pixelShader = _device.CreatePixelShader(psBlob.Span);
-            }
-            else
-            {
-                var psBlob = Compiler.Compile(PSSrc, "main", "ps_simple", "ps_5_0");
-                _pixelShader = _device.CreatePixelShader(psBlob.Span);
-            }
+            psBlob = Compiler.Compile(PSSrc, "main", "ps_simple", "ps_5_0");
+            _pixelShader = _device.CreatePixelShader(psBlob.Span);
         }
         private void CreateSamplerAndStates()
-        {
+        {   
             _sampler = _device.CreateSamplerState(new SamplerDescription
             {
                 Filter   = Filter.MinMagMipLinear,
@@ -250,28 +270,6 @@ float4 main(PSIn i) : SV_TARGET
                 BindFlags = BindFlags.ConstantBuffer,
                 CPUAccessFlags = CpuAccessFlags.Write
             });
-        }
-
-        private void RecreateShadersAndConstantBuffer()
-        {
-            lock (_lockRecreatedResources)
-            {
-                _cbViewport?.Dispose();
-                _pixelShader?.Dispose();
-
-                if (_showZoomBox)
-                {
-                    var psBlob = Compiler.Compile(PSSrc, "main", "ps", "ps_5_0");
-                    _pixelShader = _device.CreatePixelShader(psBlob.Span);
-                    CreateConstantBuffer();
-                }
-                else
-                {
-                    _cbViewport = null;
-                    var psBlob = Compiler.Compile(PSSrcSimple, "main", "ps", "ps_5_0");
-                    _pixelShader = _device.CreatePixelShader(psBlob.Span);
-                }
-            }
         }
 
         // cbuffer: Viewport-Rect from Zoom/Pan
@@ -344,19 +342,41 @@ float4 main(PSIn i) : SV_TARGET
         {
             if (_disposed) return;
             _disposed = true;
-
+            
             _sharedSrv?.Dispose();
             _sharedSrv = null;
+
             _sharedTex?.Dispose();
             _sharedTex = null;
 
             _frameSource?.Dispose();
+             LocalDispose();
+        }
+
+        private void LocalDispose()
+        {
+            IsInitialized = false;
+            
             _sampler?.Dispose();
+            _sampler = default;
+
             _rasterizer?.Dispose();
+            _rasterizer = default;
+
             _cbViewport?.Dispose();
+            _cbViewport = default;
+
             _blend?.Dispose();
+            _blend = default;
+
             _vertexShader?.Dispose();
+            _vertexShader = default;
+
             _pixelShader?.Dispose();
+            _pixelShader = default;
+
+            _context = default;
+            _device = default;
         }
 
         private void SetViewport(int width, int height)
@@ -390,12 +410,22 @@ float4 main(PSIn i) : SV_TARGET
 
                 y = SideYPixels / 2;
                 yPixels = newHeight - (height - SideYPixels);
-            }
-
-            Viewport = new((int)(x - xPixels * 0.5), (int)(y - yPixels * 0.5), newWidth, newHeight);
+            }            
+            Viewport = new((int)(x - xPixels * 0.5), (int)(y - yPixels * 0.5), (float)newWidth, (float)newHeight);
+            VideoViewSizeChanged?.Invoke();
         }
-        internal void UpdateSize(int actualWidth, int actualHeight)
+        internal void UpdateSize(DrawingSurface surface, int actualWidth, int actualHeight)
         {
+            if (!IsInitialized || _disposed)
+                return;
+            
+            Log.Debug($"UpdateSize({actualWidth}, {actualHeight})");
+            if (_device != surface.ColorTexture?.Device)
+            {
+                Log.Warn($"UpdateSize: D3D11 device changed, tid {Environment.CurrentManagedThreadId}");
+                LocalDispose();
+                InitializeD3Resource(surface);
+            }
             ControlWidth = actualWidth;
             ControlHeight = actualHeight;
             SetViewport(ControlWidth, ControlHeight);

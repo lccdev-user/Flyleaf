@@ -389,14 +389,12 @@ public unsafe class SwapChain
 
     public Result Present()
     {
-        Log.Debug($"[SC] Present, controlWidth {controlWidth}, controlHeight {controlHeight}, hwnd {ControlHwnd}");
         NotifyBeforePresent();
         return sc.Present(ucfg.VSync, PresentFlags.None);
     }
 
     public Result Present(uint syncInterval, PresentFlags flags)
     {
-        Log.Debug($"[SC] Present (2-arg), controlWidth {controlWidth}, controlHeight {controlHeight}, hwnd {ControlHwnd}");
         NotifyBeforePresent();
         return sc.Present(syncInterval, flags);
     }
