@@ -187,7 +187,7 @@ public sealed class ZoomOverviewControl : FrameworkElement, IDisposable
         _surface.MouseMove += OnMouseMove;        
     }
 
-    //  RenderingSurface.Draw Callback
+    //  DrawingSurface.Draw Callback
     /// <summary>
     /// Called by DrawingSurface when a new frame is needed.    
     /// </summary>
@@ -219,10 +219,10 @@ public sealed class ZoomOverviewControl : FrameworkElement, IDisposable
 		RequestRender();
 	}
 
-    /// <summary>Instructs RenderingSurface to re-execute OnRender.</summary>
+    /// <summary>Instructs DrawingSurface to re-execute OnRender.</summary>
     private void RequestRender()
 	{
-        // RenderingSurface.Invalidate() is thread-safe and triggers
+        // DrawingSurface.Invalidate() is thread-safe and triggers
         // another OnRender call on the next compositing tick.
         _surface.Invalidate();
 	}
