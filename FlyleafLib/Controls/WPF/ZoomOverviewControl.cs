@@ -97,7 +97,7 @@ public sealed class ZoomOverviewControl : FrameworkElement, IDisposable
 
     public int VideoWidth { get { Log.Debug($"VideoWidth => {(int)GetValue(VideoWidthProperty)}"); return (int)GetValue(VideoWidthProperty); } }
     public int VideoHeight => (int)GetValue(VideoHeightProperty);
-    public int SideX { get { Log.Debug($"SideX => {(int)GetValue(SideXProperty)}"); return (int)GetValue(SideXProperty); } }    
+    public int SideX => (int)GetValue(SideXProperty)}    
     public int SideY => (int)GetValue(SideYProperty); 
   
     /// <summary>
@@ -294,7 +294,6 @@ public sealed class ZoomOverviewControl : FrameworkElement, IDisposable
 
     private void OnSurfaceContentLoad(object sender, DrawingSurfaceEventArgs e)
     {
-        Log.Debug($"ZoomOverviewControl #{_uniqueId}: Surface content load, player {(Player is Player player ? player.PlayerId : "null")}, device {(_device is null ? "null" : "set")}, surface {_surface.IsInitialized}");
         // Update-Trigger
         CompositionTarget.Rendering += OnCompositionRendering;
 
@@ -311,8 +310,6 @@ public sealed class ZoomOverviewControl : FrameworkElement, IDisposable
 
     private void OnSurfaceContentUnload(object sender, DrawingSurfaceEventArgs e)
     {
-        Log.Debug($"ZoomOverviewControl #{_uniqueId}: surface content unload, {(Player is Player player ? player.PlayerId : "null")}, device {(_device is null ? "null" : "set")}");
-
         UnbindPlayer();
         CompositionTarget.Rendering -= OnCompositionRendering;
         _initialized = false;
@@ -329,8 +326,7 @@ public sealed class ZoomOverviewControl : FrameworkElement, IDisposable
     private void RecalcVideoSize()
     {
         if (IsRenderInitialized)
-        {
-            Log.Debug($"RecalcVideoSize: sideX {_renderer.SideXPixels}, sideY {_renderer.SideYPixels}, vp.width {_renderer.Viewport.Width}, vp.height {_renderer.Viewport.Height}");
+        {   
             try
             {
                 SetValue(SideXPropertyKey, _renderer.SideXPixels);
