@@ -4,7 +4,7 @@ using System.ComponentModel;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
-using System.Xml;
+using Vortice.Direct3D11;
 using Vortice.Wpf;
 
 namespace FlyleafLib.Controls.WPF;
@@ -23,7 +23,7 @@ namespace FlyleafLib.Controls.WPF;
 public sealed class ZoomOverviewControl : FrameworkElement, IDisposable
 {
     private static readonly Type playerType = typeof(Player);
-    private static readonly Type flType = typeof(ZoomOverviewControl);
+    private static readonly Type controlType = typeof(ZoomOverviewControl);
 
     // Dependency Properties
     public static readonly DependencyProperty ShowWhenZoomOutProperty =
@@ -35,58 +35,89 @@ public sealed class ZoomOverviewControl : FrameworkElement, IDisposable
                 typeof(ZoomOverviewControl), new PropertyMetadata(true,
                     OnShowZoomBoxChanged));
 
+    
+    private static readonly DependencyPropertyKey SideXPropertyKey =
+        DependencyProperty.RegisterReadOnly(nameof(SideX), typeof(int),
+            controlType, new FrameworkPropertyMetadata(0));
+
+    public static readonly DependencyProperty SideXProperty =
+        SideXPropertyKey.DependencyProperty;
+
+    private static readonly DependencyPropertyKey SideYPropertyKey =
+        DependencyProperty.RegisterReadOnly(nameof(SideY), typeof(int),
+            controlType, new FrameworkPropertyMetadata(0));
+
+    public static readonly DependencyProperty SideYProperty =
+        SideYPropertyKey.DependencyProperty;
+
+    public static readonly DependencyPropertyKey VideoWidthPropertyKey =
+        DependencyProperty.RegisterReadOnly(nameof(VideoWidth), typeof(int),
+            controlType, new FrameworkPropertyMetadata(0));
+
+    public static readonly DependencyProperty VideoWidthProperty = VideoWidthPropertyKey.DependencyProperty;
+
+    public static readonly DependencyPropertyKey VideoHeightPropertyKey =
+        DependencyProperty.RegisterReadOnly(nameof(VideoHeight), typeof(int),
+            controlType, new FrameworkPropertyMetadata(0));
+    public static readonly DependencyProperty VideoHeightProperty = VideoHeightPropertyKey.DependencyProperty;
+
     public static readonly DependencyProperty PlayerProperty =
-        DependencyProperty.Register(nameof(Player), playerType, flType, new(null, OnPlayerChanged));
+        DependencyProperty.Register(nameof(Player), playerType, controlType, new(null, OnPlayerChanged));
 
     public Player Player { get => (Player)GetValue(PlayerProperty); set => SetValue(PlayerProperty, value); }
     public bool ShowWhenZoomOut { get => (bool)GetValue(ShowWhenZoomOutProperty); set => SetValue(ShowWhenZoomOutProperty, value); }
     public bool ShowZoomBox { get => (bool)GetValue(ShowZoomBoxProperty); set => SetValue(ShowZoomBoxProperty, value);  }
 
+    private ID3D11Device1?        _device;
+    private ID3D11DeviceContext1? _deviceContext;
     internal LogHandler Log;
     private DrawingSurface        _surface;           
 	private ZoomOverviewRenderer  _renderer;
 	private Player                _player;
 	private bool                  _initialized;
+    private bool                  _surface_initialized;  
 	private bool                  _disposed;
 	private bool                  _needSurfaceCleaning;
-
+    private int                   _uniqueId;  
 	// Click-to-pan drag state
 	private bool  _isDragging;
 
 	public ZoomOverviewControl()
 	{
+        _uniqueId =  GetUniqueId();
+        Log = new(("[#" + _uniqueId + "]").PadRight(8, ' ') + " [ZOVC           ] ");
+        
         InitSurface();
 
-        Loaded += OnLoaded;
-        Unloaded += OnUnloaded;
         SizeChanged += OnSizeChanged;
+        // Update-Trigger
+        CompositionTarget.Rendering += OnCompositionRendering;
 
         // Clip to bounds (rounded corners done via a clip geometry)
         ClipToBounds = true;
-
-        var uniqueId =  GetUniqueId();
-        Log = new(("[#" + uniqueId + "]").PadRight(8, ' ') + " [ZOVC    ] ");
-        Log.Debug($"new zoom overview control #{uniqueId} created");
     }
 
+    public int VideoWidth { get { Log.Debug($"VideoWidth => {(int)GetValue(VideoWidthProperty)}"); return (int)GetValue(VideoWidthProperty); } }
+    public int VideoHeight => (int)GetValue(VideoHeightProperty);
+    public int SideX { get { Log.Debug($"SideX => {(int)GetValue(SideXProperty)}"); return (int)GetValue(SideXProperty); } }    
+    public int SideY => (int)GetValue(SideYProperty); 
+  
     /// <summary>
     /// Connects the control to a FlyleafLib player.
     /// Must be called on the UI thread.
     /// </summary>
     public void BindPlayer(Player player)
 	{
-		if (_initialized || _disposed)
+		if (_initialized || _disposed || !IsSurfaceInitialized) 
 			return;
 		_player = player ?? throw new ArgumentNullException(nameof(player));
 
-        Log.Debug($"Bind player #{_player.PlayerId} with zoom overview control");
-        _renderer = new ZoomOverviewRenderer(player, (int)ActualWidth, (int)ActualHeight);
-		_renderer.InitializeD3Resource(_surface);   // neue, vereinfachte Init-Variante
+        _renderer = new ZoomOverviewRenderer(player, (int)ActualWidth, (int)ActualHeight);        
+		_renderer.InitializeD3Resource(_device, _deviceContext);
         _renderer.ShowZoomBox = ShowZoomBox;
+        _renderer.VideoViewSizeChanged = RecalcVideoSize;
 
-        // Update-Trigger
-        CompositionTarget.Rendering += OnCompositionRendering;
-        player.Config.Video.PropertyChanged += ZoomOverviewPropertyChanged;
+        _player.Config.Video.PropertyChanged += ZoomOverviewPropertyChanged;
 
 		UpdateVisibility();
 		_initialized = true;
@@ -98,10 +129,10 @@ public sealed class ZoomOverviewControl : FrameworkElement, IDisposable
     /// </summary>
     public void UnbindPlayer()
 	{
-		if (!_initialized || _disposed)
+		if (!_initialized || _disposed || !IsSurfaceInitialized || _player is null)
 			return;
-
-        Log.Debug($"Unbind player from zoom overview control");
+        
+        Log.Debug($"Unbind player #{_player?.PlayerId} from zoom overview control #{_uniqueId}");
         _initialized = false;
 
         CompositionTarget.Rendering -= OnCompositionRendering;
@@ -126,54 +157,40 @@ public sealed class ZoomOverviewControl : FrameworkElement, IDisposable
 							   or nameof(_player.Config.Video.PanYOffset))
 		{
 			UpdateVisibility();
-			RequestRender();
+            RequestRender();
 		}
 	}
 
     private void SetPlayer(Player oldPlayer)
     {
-        Log.Debug("SetPlayer()");
+        if (!IsSurfaceInitialized) return;
+
+        Log.Debug($"SetPlayer( old player #{oldPlayer?.PlayerId}), new player #{Player?.PlayerId}, zoc #{_uniqueId}");
         if (oldPlayer != null)
             UnbindPlayer();
 
-        if (Player == null)
-            return;
+        if (Player == null) return;
 
-        InitSurface();
-        BindPlayer(Player);
+        BindPlayer(Player);       
     }
 
     private void InitSurface()
-    {
+    {   
         _surface = new DrawingSurface();
+
         _surface.Draw += OnDrawingSurfaceRender;
+        _surface.LoadContent += OnSurfaceContentLoad;
+        _surface.UnloadContent += OnSurfaceContentUnload;
 
         AddVisualChild(_surface);
 
         // Mouse interaction
         _surface.MouseLeftButtonDown += OnMouseDown;
         _surface.MouseLeftButtonUp += OnMouseUp;
-        _surface.MouseMove += OnMouseMove;
+        _surface.MouseMove += OnMouseMove;        
     }
 
-    private void DisposeSurface()
-    {
-        Log.Debug($"Dispose: disposed {_disposed}");
-        if (_surface != null)
-        {
-            RemoveVisualChild(_surface);
-
-            _surface.Draw -= OnDrawingSurfaceRender;
-            _surface.MouseLeftButtonDown -= OnMouseDown;
-            _surface.MouseLeftButtonUp -= OnMouseUp;
-            _surface.MouseMove -= OnMouseMove;
-        }
-
-        (_surface as IDisposable)?.Dispose();
-        _surface = null;
-    }
-
-    //  DrawingSurface.Draw Callback
+    //  RenderingSurface.Draw Callback
     /// <summary>
     /// Called by DrawingSurface when a new frame is needed.    
     /// </summary>
@@ -183,10 +200,10 @@ public sealed class ZoomOverviewControl : FrameworkElement, IDisposable
 			ClearSurface(args);
 		if (!_initialized || _disposed || _renderer == null)
 			return;
+        
+        _renderer?.RenderIntoTexture(args.Surface.ColorTexture, args);
 
-		_renderer.RenderIntoTexture(args.Surface.ColorTexture, args);
-
-		args.InvalidateSurface();
+        args.InvalidateSurface();
 	}
 
 	private void ClearSurface(DrawEventArgs args)
@@ -200,17 +217,15 @@ public sealed class ZoomOverviewControl : FrameworkElement, IDisposable
     // Trigger Helper
     private void OnCompositionRendering(object sender, EventArgs e)
 	{
-		if (!_initialized || _disposed)
+		if (!_initialized || _disposed || !IsSurfaceInitialized)
 			return;
-        if ((bool)!_renderer?.IsInitialized)
-            _renderer?.InitializeD3Resource(_surface);
 		RequestRender();
 	}
 
-    /// <summary>Instructs DrawingSurface to re-execute OnRender.</summary>
+    /// <summary>Instructs RenderingSurface to re-execute OnRender.</summary>
     private void RequestRender()
 	{
-        // DrawingSurface.Invalidate() is thread-safe and triggers
+        // RenderingSurface.Invalidate() is thread-safe and triggers
         // another OnRender call on the next compositing tick.
         _surface.Invalidate();
 	}
@@ -218,10 +233,16 @@ public sealed class ZoomOverviewControl : FrameworkElement, IDisposable
 	//  Visibility
 	private void UpdateVisibility()
 	{
-		if (_player == null)
-			return;
+        if (!ShowWhenZoomOut)
+            return;
+
+        if (_player == null)
+        {   
+            Visibility = Visibility.Collapsed;
+            return;
+        }
 		bool zoomed = _player.Config.Video.Zoom > 100;
-		Visibility = (zoomed || ShowWhenZoomOut) ? Visibility.Visible : Visibility.Collapsed;
+		Visibility = zoomed ? Visibility.Visible : Visibility.Collapsed;
 	}
 
 	//  DependencyProperty Callback
@@ -234,7 +255,6 @@ public sealed class ZoomOverviewControl : FrameworkElement, IDisposable
 
     private static void OnPlayerChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
         => ((ZoomOverviewControl)d).SetPlayer((Player)e.OldValue);
-
 
     //  Click-to-pan
     private void OnMouseDown(object sender, MouseButtonEventArgs e)
@@ -271,26 +291,51 @@ public sealed class ZoomOverviewControl : FrameworkElement, IDisposable
 		_player.Config.Video.PanYOffset = -panY;
 	}
 
-    private void OnLoaded(object sender, RoutedEventArgs e)
+    private void OnSurfaceContentLoad(object sender, DrawingSurfaceEventArgs e)
     {
-        Log.Debug($"ZoomOverviewControl: Loaded, player {(Player is Player ? "set" : "null")}");
-        if (Player != null)
+        Log.Debug($"ZoomOverviewControl #{_uniqueId}: Surface content load, player {(Player is Player player ? player.PlayerId : "null")}, device {(_device is null ? "null" : "set")}, surface {_surface.IsInitialized}");
+        _device = e.Device;
+        _deviceContext = e.Context;
+        if (Player is not null)
+        {
             BindPlayer(Player);
+            _player?.ShowFrame();
+        }
     }
 
-    private void OnUnloaded(object sender, RoutedEventArgs e)
+    private void OnSurfaceContentUnload(object sender, DrawingSurfaceEventArgs e)
     {
-        Log.Debug($"ZoomOverviewControl: OnUnloaded, {(Player is Player ? "set" : "null")}");
-        if (Player != null)
-            UnbindPlayer();
+        Log.Debug($"ZoomOverviewControl #{_uniqueId}: surface content unload, {(Player is Player player ? player.PlayerId : "null")}, device {(_device is null ? "null" : "set")}");
+        UnbindPlayer();        
+        _deviceContext = default;
+        _device = default;
     }
 
     private void OnSizeChanged(object sender, SizeChangedEventArgs e)
     {
         _surface?.InvalidateMeasure();
-        _renderer?.UpdateSize((int)e.NewSize.Width, (int)e.NewSize.Height);
+        _renderer?.UpdateSize(_surface, (int)e.NewSize.Width, (int)e.NewSize.Height);
     }
 
+    private void RecalcVideoSize()
+    {
+        if (IsRenderInitialized)
+        {
+            Log.Debug($"RecalcVideoSize: sideX {_renderer.SideXPixels}, sideY {_renderer.SideYPixels}, vp.width {_renderer.Viewport.Width}, vp.height {_renderer.Viewport.Height}");
+            try
+            {
+                SetValue(SideXPropertyKey, _renderer.SideXPixels);
+                SetValue(SideYPropertyKey, _renderer.SideYPixels);
+
+                SetValue(VideoWidthPropertyKey, (int)_renderer.Viewport.Width);
+                SetValue(VideoHeightPropertyKey, (int)_renderer.Viewport.Height);
+            }
+            catch { }
+        }
+    }
+
+    private bool IsRenderInitialized => _renderer is null ? false : _renderer.IsInitialized;
+    private bool IsSurfaceInitialized => _device is null || _deviceContext is null ? false : true;
     //  Visual tree
     protected override int VisualChildrenCount => 1;
 	protected override Visual GetVisualChild(int index) => _surface;
@@ -310,16 +355,26 @@ public sealed class ZoomOverviewControl : FrameworkElement, IDisposable
 
 	//  IDisposable
 	public void Dispose()
-	{
-        Log.Debug($"Dispose: disposed {_disposed}");
+	{   
 		if (_disposed)
 			return;
-
-        UnbindPlayer();
-        DisposeSurface();
         _disposed = true;
 
-		_renderer?.Dispose();
-        _renderer = null;
-	}
+        SizeChanged -= OnSizeChanged;
+        CompositionTarget.Rendering -= OnCompositionRendering;
+
+        _renderer?.Dispose();
+        _renderer = default;
+
+        if (_surface != null)
+        {
+            _surface.Draw -= OnDrawingSurfaceRender;
+            _surface.MouseLeftButtonDown -= OnMouseDown;
+            _surface.MouseLeftButtonUp -= OnMouseUp;
+            _surface.MouseMove -= OnMouseMove;
+        }
+
+        (_surface as IDisposable)?.Dispose();
+        _surface = default;
+    }
 }
