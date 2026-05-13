@@ -95,9 +95,9 @@ public sealed class ZoomOverviewControl : FrameworkElement, IDisposable
         ClipToBounds = true;
     }
 
-    public int VideoWidth { get { Log.Debug($"VideoWidth => {(int)GetValue(VideoWidthProperty)}"); return (int)GetValue(VideoWidthProperty); } }
+    public int VideoWidth => (int)GetValue(VideoWidthProperty); 
     public int VideoHeight => (int)GetValue(VideoHeightProperty);
-    public int SideX => (int)GetValue(SideXProperty)}    
+    public int SideX => (int)GetValue(SideXProperty);    
     public int SideY => (int)GetValue(SideYProperty); 
   
     /// <summary>
