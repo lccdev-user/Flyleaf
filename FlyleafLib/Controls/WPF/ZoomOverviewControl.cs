@@ -90,9 +90,7 @@ public sealed class ZoomOverviewControl : FrameworkElement, IDisposable
         InitSurface();
 
         SizeChanged += OnSizeChanged;
-        // Update-Trigger
-        CompositionTarget.Rendering += OnCompositionRendering;
-
+        
         // Clip to bounds (rounded corners done via a clip geometry)
         ClipToBounds = true;
     }
@@ -108,7 +106,7 @@ public sealed class ZoomOverviewControl : FrameworkElement, IDisposable
     /// </summary>
     public void BindPlayer(Player player)
 	{
-		if (_initialized || _disposed || !IsSurfaceInitialized) 
+		if (!_initialized || _disposed || !IsSurfaceInitialized) 
 			return;
 		_player = player ?? throw new ArgumentNullException(nameof(player));
 
@@ -120,7 +118,6 @@ public sealed class ZoomOverviewControl : FrameworkElement, IDisposable
         _player.Config.Video.PropertyChanged += ZoomOverviewPropertyChanged;
 
 		UpdateVisibility();
-		_initialized = true;
 	}
 
     /// <summary>
@@ -135,8 +132,6 @@ public sealed class ZoomOverviewControl : FrameworkElement, IDisposable
         Log.Debug($"Unbind player #{_player?.PlayerId} from zoom overview control #{_uniqueId}");
         _initialized = false;
 
-        CompositionTarget.Rendering -= OnCompositionRendering;
-
         if (_player is not null)
 			_player.Config.Video.PropertyChanged -= ZoomOverviewPropertyChanged;
 
@@ -144,7 +139,9 @@ public sealed class ZoomOverviewControl : FrameworkElement, IDisposable
 
         _renderer?.Dispose();
 		_renderer = null;
-		_needSurfaceCleaning = true;
+
+        UpdateVisibility();
+        _needSurfaceCleaning = true;
 	}
 
 	private void ZoomOverviewPropertyChanged(object sender, PropertyChangedEventArgs e)
@@ -233,16 +230,20 @@ public sealed class ZoomOverviewControl : FrameworkElement, IDisposable
 	//  Visibility
 	private void UpdateVisibility()
 	{
+        if (_player == null)
+        {
+            if (ShowWhenZoomOut)
+                Visibility = Visibility.Collapsed;
+            return;
+        }
         if (!ShowWhenZoomOut)
             return;
 
-        if (_player == null)
-        {   
-            Visibility = Visibility.Collapsed;
-            return;
-        }
 		bool zoomed = _player.Config.Video.Zoom > 100;
 		Visibility = zoomed ? Visibility.Visible : Visibility.Collapsed;
+
+        if (!zoomed)
+            _needSurfaceCleaning = true;
 	}
 
 	//  DependencyProperty Callback
@@ -294,8 +295,13 @@ public sealed class ZoomOverviewControl : FrameworkElement, IDisposable
     private void OnSurfaceContentLoad(object sender, DrawingSurfaceEventArgs e)
     {
         Log.Debug($"ZoomOverviewControl #{_uniqueId}: Surface content load, player {(Player is Player player ? player.PlayerId : "null")}, device {(_device is null ? "null" : "set")}, surface {_surface.IsInitialized}");
+        // Update-Trigger
+        CompositionTarget.Rendering += OnCompositionRendering;
+
         _device = e.Device;
         _deviceContext = e.Context;
+        _initialized = true;
+
         if (Player is not null)
         {
             BindPlayer(Player);
@@ -306,7 +312,10 @@ public sealed class ZoomOverviewControl : FrameworkElement, IDisposable
     private void OnSurfaceContentUnload(object sender, DrawingSurfaceEventArgs e)
     {
         Log.Debug($"ZoomOverviewControl #{_uniqueId}: surface content unload, {(Player is Player player ? player.PlayerId : "null")}, device {(_device is null ? "null" : "set")}");
-        UnbindPlayer();        
+
+        UnbindPlayer();
+        CompositionTarget.Rendering -= OnCompositionRendering;
+        _initialized = false;
         _deviceContext = default;
         _device = default;
     }
@@ -361,8 +370,7 @@ public sealed class ZoomOverviewControl : FrameworkElement, IDisposable
         _disposed = true;
 
         SizeChanged -= OnSizeChanged;
-        CompositionTarget.Rendering -= OnCompositionRendering;
-
+        
         _renderer?.Dispose();
         _renderer = default;
 
