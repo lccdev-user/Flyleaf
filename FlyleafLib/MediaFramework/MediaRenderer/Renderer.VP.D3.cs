@@ -84,7 +84,7 @@ public unsafe partial class Renderer
         if (d3CacheEntry.Failed && !needsFillUnlock)
             return;
 
-        vd = device.QueryInterface<ID3D11VideoDevice>();
+        try { vd = device.QueryInterface<ID3D11VideoDevice>(); } catch { vd = null; }
         if (vd == null)
         {
             if (needsFillUnlock) Monitor.Exit(d3CacheEntry);
@@ -92,7 +92,7 @@ public unsafe partial class Renderer
             return;
         }
 
-        vc = context.QueryInterface<ID3D11VideoContext>();
+        try { vc = context.QueryInterface<ID3D11VideoContext>(); } catch { vc = null; }
         if (vc != null)
             if (vd.CreateVideoProcessorEnumerator   (ref vped, out ve).Success)    // TBR: vpcd config (maybe requires max sizes)
                 vd.CreateVideoProcessor             (ve, 0, out vp);               // TBR: config for which rate index?
