@@ -48,7 +48,7 @@ public unsafe static class DemuxerExtensions
         frameTime += demuxer.StartCustomTimestamp(VideoTimeUnit.Milliseconds);
         var expectedTime = demuxer.ExpectedCustomTimestamp(VideoTimeUnit.Milliseconds);
         Log?.Trace($"IsSearchCompleted: pts {frame->pts}, timeBase {timeBase}, frameTime {frameTime}, expected {expectedTime}");
-        return (frameTime >= expectedTime) || (expectedTime == 0) || (expectedTime - frameTime > 5000);
+        return (frameTime >= expectedTime) || (expectedTime == 0);
     }
     public static bool SkipFrameBySearch(this Demuxer demuxer, long timestamp, LogHandler? Log = null)
     {
