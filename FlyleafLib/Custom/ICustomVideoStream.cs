@@ -34,5 +34,7 @@ public interface ICustomVideoStream
     bool SearchCompleted { get; set; }
     bool IsBufferReady { get; }
     int Mode { get; set; }
+    double SpoolSpeed { get; set; }
+    void Play(long timestamp, int playMode, double spoolSpeed);
 }
 #nullable disable

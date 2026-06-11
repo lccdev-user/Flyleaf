@@ -1374,9 +1374,15 @@ public unsafe class Demuxer : RunThreadBase
                         {
                             var lastGOP = this.FirstCustomTimestampInGOP(VideoTimeUnit.Milliseconds);
                             var ts = lastGOP - 1000;
-                            if (CanDebug)
-                                Log.Debug($"Seek({ts} ms, backward), last gop time {lastGOP}");
-                            ret = CustomIOContext.stream.Seek(ts, SeekOrigin.End) > 0 ? 0 : AVERROR_EOF;
+                            if (CustomIOContext.stream is ICustomVideoStream stream)
+                            {
+                                var mode = stream.Mode;
+                                var speed = stream.SpoolSpeed;
+                                if (CanDebug)
+                                    Log.Debug($"Play({ts} ms, mode {mode}, spoolSpeed {speed}), last gop time {lastGOP}");
+                                stream.Play(ts, mode, speed);
+                                ret = 0;
+                            }                            
                         }   
 
                         if (ret != 0)
@@ -1511,9 +1517,15 @@ public unsafe class Demuxer : RunThreadBase
                     {
                         var lastGOP = this.FirstCustomTimestampInGOP(VideoTimeUnit.Milliseconds);
                         var ts = lastGOP - 2000;
-                        if (CanDebug)
-                            Log.Debug($"Seek({ts} ms, backward), last gop time {lastGOP}");
-                        ret = CustomIOContext.stream.Seek(ts, SeekOrigin.End) > 0 ? 0 : AVERROR_EOF;
+                        if (CustomIOContext.stream is ICustomVideoStream stream)
+                        {
+                            var mode = stream.Mode;
+                            var speed = stream.SpoolSpeed;
+                            if (CanDebug)
+                                Log.Debug($"Play({ts} ms, mode {mode}, spoolSpeed {speed}), last gop time {lastGOP}");
+                            stream.Play(ts, mode, speed);
+                            ret = 0;
+                        }
                     }
 
                     if (ret != 0)
