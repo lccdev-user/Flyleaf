@@ -6,7 +6,7 @@ public unsafe static class DemuxerExtensions
 {
     public static bool IsCustomStream(this Demuxer demuxer) => demuxer.CustomIOContext.stream is ICustomVideoStream stream;
     public static bool IsCustomStreamLive(this Demuxer demuxer) => demuxer.IsCustomStream() ? demuxer.CustomIOContext.stream.IsCustomStreamLive() : false;
-    public static long FirstCustomTimestampInGOP(this Demuxer demuxer, VideoTimeUnit unit) => demuxer.IsCustomStream() ? demuxer.CustomIOContext.stream.FirstTimestampInGOP(unit) : 0;
+    public static long FirstCustomTimestampInGoP(this Demuxer demuxer, VideoTimeUnit unit) => demuxer.IsCustomStream() ? demuxer.CustomIOContext.stream.FirstTimestampInGoP(unit) : 0;
     public static long StartCustomTimestamp(this Demuxer demuxer, VideoTimeUnit unit) => demuxer.IsCustomStream() ? demuxer.CustomIOContext.stream.StartTimestamp (unit) : 0;
     public static long LastCustomTimestamp(this Demuxer demuxer, VideoTimeUnit unit) => demuxer.IsCustomStream() ? demuxer.CustomIOContext.stream.LastTimestamp(unit) : 0;
     public static long CurCustomTime(this Demuxer demuxer, VideoTimeUnit unit) => demuxer.IsCustomStream() ? demuxer.CustomIOContext.stream.CurTime(unit) : 0;

@@ -1372,7 +1372,7 @@ public unsafe class Demuxer : RunThreadBase
                         }
                         else
                         {
-                            var lastGOP = this.FirstCustomTimestampInGOP(VideoTimeUnit.Milliseconds);
+                            var lastGOP = this.FirstCustomTimestampInGoP(VideoTimeUnit.Milliseconds);
                             var ts = lastGOP - 1000;
                             if (CustomIOContext.stream is ICustomVideoStream stream)
                             {
@@ -1515,7 +1515,7 @@ public unsafe class Demuxer : RunThreadBase
                     }
                     else
                     {
-                        var lastGOP = this.FirstCustomTimestampInGOP(VideoTimeUnit.Milliseconds);
+                        var lastGOP = this.FirstCustomTimestampInGoP(VideoTimeUnit.Milliseconds);
                        
                         if (CustomIOContext.stream is ICustomVideoStream stream)
                         {

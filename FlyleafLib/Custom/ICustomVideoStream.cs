@@ -19,7 +19,7 @@ public interface ICustomVideoStream
     /// <summary>
     /// The first timestamp of the video response (in milliseconds).
     /// </summary>
-    long FirstTimestampInGOP { get; }
+    long FirstTimestampInGoP { get; }
     /// <summary>
     ///
     /// </summary>
