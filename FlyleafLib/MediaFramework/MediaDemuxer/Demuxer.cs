@@ -1516,13 +1516,16 @@ public unsafe class Demuxer : RunThreadBase
                     else
                     {
                         var lastGOP = this.FirstCustomTimestampInGOP(VideoTimeUnit.Milliseconds);
-                        var ts = lastGOP - 2000;
+                       
                         if (CustomIOContext.stream is ICustomVideoStream stream)
                         {
                             var mode = stream.Mode;
                             var speed = stream.SpoolSpeed;
+                            var ts = lastGOP - 2000 * (1 + (int)Math.Abs(speed/2));
+
                             if (CanDebug)
                                 Log.Debug($"Play({ts} ms, mode {mode}, spoolSpeed {speed}), last gop time {lastGOP}");
+
                             stream.Play(ts, mode, speed);
                             ret = 0;
                         }
