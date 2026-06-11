@@ -8,7 +8,7 @@ public unsafe partial class Player
     {
         frameTimestamp = 0;
 
-        if (ReversePlayback || !CanPlay || VideoDecoder.CodecCtx == null)
+        if (ReversePlayback || !CanPlay || VideoDecoder.CodecCtx == null || VideoDecoder.VideoStream == null)
             return true;
         try
         {

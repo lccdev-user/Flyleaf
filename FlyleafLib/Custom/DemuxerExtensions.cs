@@ -6,7 +6,7 @@ public unsafe static class DemuxerExtensions
 {
     public static bool IsCustomStream(this Demuxer demuxer) => demuxer.CustomIOContext.stream is ICustomVideoStream stream;
     public static bool IsCustomStreamLive(this Demuxer demuxer) => demuxer.IsCustomStream() ? demuxer.CustomIOContext.stream.IsCustomStreamLive() : false;
-    public static long FirstCustomTimestamp(this Demuxer demuxer, VideoTimeUnit unit) => demuxer.IsCustomStream() ? demuxer.CustomIOContext.stream.FirstTimestamp(unit) : 0;
+    public static long FirstCustomTimestampInGOP(this Demuxer demuxer, VideoTimeUnit unit) => demuxer.IsCustomStream() ? demuxer.CustomIOContext.stream.FirstTimestampInGOP(unit) : 0;
     public static long StartCustomTimestamp(this Demuxer demuxer, VideoTimeUnit unit) => demuxer.IsCustomStream() ? demuxer.CustomIOContext.stream.StartTimestamp (unit) : 0;
     public static long LastCustomTimestamp(this Demuxer demuxer, VideoTimeUnit unit) => demuxer.IsCustomStream() ? demuxer.CustomIOContext.stream.LastTimestamp(unit) : 0;
     public static long CurCustomTime(this Demuxer demuxer, VideoTimeUnit unit) => demuxer.IsCustomStream() ? demuxer.CustomIOContext.stream.CurTime(unit) : 0;
@@ -48,7 +48,7 @@ public unsafe static class DemuxerExtensions
         frameTime += demuxer.StartCustomTimestamp(VideoTimeUnit.Milliseconds);
         var expectedTime = demuxer.ExpectedCustomTimestamp(VideoTimeUnit.Milliseconds);
         Log?.Trace($"IsSearchCompleted: pts {frame->pts}, timeBase {timeBase}, frameTime {frameTime}, expected {expectedTime}");
-        return (frameTime >= expectedTime) || (expectedTime == 0);
+        return (frameTime >= expectedTime) || (expectedTime == 0) || (expectedTime - frameTime > 5000);
     }
     public static bool SkipFrameBySearch(this Demuxer demuxer, long timestamp, LogHandler? Log = null)
     {
@@ -82,6 +82,16 @@ public unsafe static class DemuxerExtensions
         if (demuxer.CustomIOContext.stream is not ICustomVideoStream stream)
             return 0;
         return timestamp + stream.StartTimestamp;
+    }
+
+    public static long PtsToCustomTimestamp(this Demuxer demuxer, long pts, int streamIndex)
+    {
+        if (demuxer.CustomIOContext.stream is not ICustomVideoStream stream)
+            return 0;
+        var videoStream = demuxer.AVStreamToStream[streamIndex];
+        var timeBase = videoStream.Timebase;
+
+        return (long)(pts * timeBase / 10000) + stream.StartTimestamp;
     }
     public static bool IsVideoBufferReady(this Demuxer demuxer) => demuxer.IsCustomStream() ? demuxer.CustomIOContext.stream.IsBufferReady() : false;
 

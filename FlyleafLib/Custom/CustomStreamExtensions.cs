@@ -18,11 +18,11 @@ public static class CustomStreamExtensions
         _ => custom.LastTimestamp,
     };
 
-    public static long FirstTimestamp(this Stream stream, VideoTimeUnit timeUnit = VideoTimeUnit.Milliseconds) => stream is not ICustomVideoStream custom ? 0 : timeUnit switch
+    public static long FirstTimestampInGOP(this Stream stream, VideoTimeUnit timeUnit = VideoTimeUnit.Milliseconds) => stream is not ICustomVideoStream custom ? 0 : timeUnit switch
     {
-        VideoTimeUnit.Microseconds => custom.FirstTimestamp * Microseconds.InOneMillisecond,
-        VideoTimeUnit.Ticks => custom.FirstTimestamp * Ticks.InOneMillisecond,
-        _ => custom.FirstTimestamp,
+        VideoTimeUnit.Microseconds => custom.FirstTimestampInGOP * Microseconds.InOneMillisecond,
+        VideoTimeUnit.Ticks => custom.FirstTimestampInGOP * Ticks.InOneMillisecond,
+        _ => custom.FirstTimestampInGOP,
     };
 
     public static long CurTime(this Stream stream, VideoTimeUnit timeUnit = VideoTimeUnit.Milliseconds)
