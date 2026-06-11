@@ -82,17 +82,7 @@ public unsafe static class DemuxerExtensions
         if (demuxer.CustomIOContext.stream is not ICustomVideoStream stream)
             return 0;
         return timestamp + stream.StartTimestamp;
-    }
-
-    public static long PtsToCustomTimestamp(this Demuxer demuxer, long pts, int streamIndex)
-    {
-        if (demuxer.CustomIOContext.stream is not ICustomVideoStream stream)
-            return 0;
-        var videoStream = demuxer.AVStreamToStream[streamIndex];
-        var timeBase = videoStream.Timebase;
-
-        return (long)(pts * timeBase / 10000) + stream.StartTimestamp;
-    }
+    }    
     public static bool IsVideoBufferReady(this Demuxer demuxer) => demuxer.IsCustomStream() ? demuxer.CustomIOContext.stream.IsBufferReady() : false;
 
     public static void SetPlayMode(this Demuxer demuxer, int playMode)
