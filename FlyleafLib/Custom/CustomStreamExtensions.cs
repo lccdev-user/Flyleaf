@@ -1,4 +1,5 @@
 ﻿using FlyleafLib.MediaFramework.MediaDemuxer;
+using System.Reflection;
 
 namespace FlyleafLib.Custom;
 
@@ -82,4 +83,6 @@ public static class CustomStreamExtensions
     public static bool IsCustomPlayStopMode(this Stream stream) => stream is ICustomVideoStream custom ? custom.IsPlayStopMode : false;
     public static bool IsBufferReady(this Stream stream) => stream is ICustomVideoStream custom ? custom.IsBufferReady : true;
     public static void SetPlayMode(this Stream stream, int PlayMode) { if (stream is ICustomVideoStream custom) custom.Mode = PlayMode; }
+
+    public static double GetSpoolSpeed(this Stream stream) => stream is ICustomVideoStream custom ? custom.SpoolSpeed : 0.0;
 }
