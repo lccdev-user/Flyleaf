@@ -1291,7 +1291,7 @@ public unsafe class Demuxer : RunThreadBase
         int ret = 0;
         int allowedErrors = Config.MaxErrors;
         bool gotAVERROR_EXIT = false;
-        bool skipThisGoP = false;
+        bool continueCurrentQueue = false;
         double lastSpoolSpeed = 0;
 
         // To demux further for buffering (related to BufferDuration)
@@ -1381,7 +1381,7 @@ public unsafe class Demuxer : RunThreadBase
                             {
                                 var mode = stream.Mode;
                                 lastSpoolSpeed = stream.SpoolSpeed;
-                                skipThisGoP = false;
+                                continueCurrentQueue = false;
 
                                 if (CanDebug)
                                     Log.Debug($"Play({ts} ms, mode {mode}, spoolSpeed {lastSpoolSpeed}), last GoP time {lastGoP}");
@@ -1424,7 +1424,7 @@ public unsafe class Demuxer : RunThreadBase
                     if (spoolSpeed != lastSpoolSpeed && lastSpoolSpeed != 0)
                     {
                         lastSpoolSpeed = spoolSpeed;
-                        skipThisGoP = false;
+                        continueCurrentQueue = false;
                         curReverseStartPts = NoTs;
                     }
 
@@ -1437,16 +1437,19 @@ public unsafe class Demuxer : RunThreadBase
                 }
 
                 if ((packet->flags & PktFlags.Key) != 0)
-                {   
+                {
+                    Log.Trace($"[key-frame] " + $"packet->pts {packet->pts}, " +
+                        $"curReverseStartPts {(curReverseStartPts == AV_NOPTS_VALUE ? "-" : curReverseStartPts)}, " +
+                        $"curReverseStopPts {(curReverseStopPts == AV_NOPTS_VALUE ? "-" : curReverseStopPts)}, " +
+                        $"curReverseStopRequestedPts {(curReverseStopRequestedPts == AV_NOPTS_VALUE ? "-" : curReverseStopRequestedPts)}, packets in queue {curReverseVideoPackets.Count}");
+
                     if (curReverseStartPts == NoTs)
                         curReverseStartPts = packet->pts;
 
-                    // If this is a non-standard video stream with the GOP sequence GOP[n], GOP[n+1], GOP[n-1], GOP[n]..., then every second GOP must be skipped.
-                    skipThisGoP = packet->pts > curReverseStartPts && this.IsCustomStream();
-                    if (skipThisGoP)
-                        continue;
-
-                    if (curReverseVideoPackets.Count > 0 && curReverseStopRequestedPts != NoTs)
+                    // If this is a non-standard video stream with the GOP sequence GOP[n], GOP[n+1], GOP[n-2], GOP[n-1]...
+                    continueCurrentQueue = packet->pts > curReverseStartPts && this.IsCustomStream();
+                    
+                    if (curReverseVideoPackets.Count > 0 && curReverseStopRequestedPts != NoTs && !continueCurrentQueue)
                     {
                         var drainPacket = av_packet_alloc();
                         drainPacket->data = null;
@@ -1459,14 +1462,26 @@ public unsafe class Demuxer : RunThreadBase
                     }                    
                 }
 
-                if (skipThisGoP)
-                    continue;
+                if (CanTrace)
+                {
+                    Log.Trace($"packet->pts {(packet->pts == curReverseStopPts)}, continue queue {continueCurrentQueue}, " +
+                        $"curReverseStartPts {(curReverseStartPts == AV_NOPTS_VALUE ? "-" : curReverseStartPts)}, " +
+                        $"curReverseStopPts {(curReverseStopPts == AV_NOPTS_VALUE ? "-" : curReverseStopPts)}, " +
+                        $"curReverseStopRequestedPts {(curReverseStopRequestedPts == AV_NOPTS_VALUE ? "-" : curReverseStopRequestedPts)}, "
+                    );
+
+                    Log.Trace($"packet: pts {packet->pts}, is key {(packet->flags & PktFlags.Key) != 0}" +
+                        $", {(curReverseStopRequestedPts != NoTs && curReverseStopRequestedPts <= packet->pts)}" +
+                        $", {(curReverseStopPts == NoTs && (packet->flags & PktFlags.Key) != 0 && packet->pts != curReverseStartPts)}" +
+                        $", {(packet->pts == curReverseStopPts)}"
+                    );
+                }
 
                 if (packet->pts != NoTs && (
                     (curReverseStopRequestedPts != NoTs && curReverseStopRequestedPts <= packet->pts)  ||
                     (curReverseStopPts == NoTs && (packet->flags & PktFlags.Key) != 0 && packet->pts != curReverseStartPts)     ||
                     (packet->pts == curReverseStopPts)
-                    ))
+                    ) && !continueCurrentQueue)
                 {
                     if (curReverseStartPts == NoTs || curReverseStopPts == curReverseStartPts)
                     {
@@ -1529,7 +1544,7 @@ public unsafe class Demuxer : RunThreadBase
                 }
                 else
                 {
-                    if (curReverseStartPts != NoTs)
+                    if (curReverseStartPts != NoTs || continueCurrentQueue)
                     {
                         curReverseVideoPackets.Add((nint)packet);
                         packet = av_packet_alloc();
