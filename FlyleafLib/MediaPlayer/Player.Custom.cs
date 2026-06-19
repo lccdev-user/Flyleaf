@@ -52,4 +52,9 @@ public unsafe partial class Player
                 Renderer.RenderRequest();
         }
     }
+
+    public bool ReversePlaybackResync
+    {
+        get => reversePlaybackResync; set => reversePlaybackResync = value;
+    }
 }

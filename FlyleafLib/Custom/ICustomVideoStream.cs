@@ -27,6 +27,9 @@ public interface ICustomVideoStream
     long LastTimestamp { get; }
     Double FrameDuration { get; }
     int FramesPerSecond { get; }
+    long PictureGroupTimeStamp { get; }
+    double PictureGroupFrameDuration { get; }
+    int PictureGroupFrameIndex { get; set; }
     bool IsLive { get; }
     int ExpectedFrameIndex { get; }
     long FrameCount { get; set; }

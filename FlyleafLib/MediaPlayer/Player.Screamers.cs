@@ -1,8 +1,8 @@
-﻿using System.Diagnostics;
-
+﻿using FlyleafLib.Custom;
 using FlyleafLib.MediaFramework.MediaDecoder;
 using FlyleafLib.MediaFramework.MediaFrame;
-using FlyleafLib.Custom;
+using System.Diagnostics;
+using System.Net.Sockets;
 
 namespace FlyleafLib.MediaPlayer;
 
@@ -217,6 +217,7 @@ unsafe partial class Player
                 OnBufferingStarted();
                 if (reversePlaybackResync)
                 {
+                    Log.Trace("reversePlaybackResync: curTime {CurTime}");
                     decoder.Flush();
                     VideoDemuxer.EnableReversePlayback(CurTime);
                     reversePlaybackResync = false;
@@ -245,12 +246,29 @@ unsafe partial class Player
                 UpdateCurTime(vFrame.Timestamp, false);
                 Renderer.RenderIdleStop();
                 sw.Restart();
+                Log.Trace("video timer restarted, start frame ticks {startTicks}");
             }
 
             elapsedTicks    = (long)(sw.ElapsedTicks * SWFREQ_TO_TICKS);
-            vDistanceMs     = (int) ((((startTicks - vFrame.Timestamp) / speed) - elapsedTicks) / 10000);
-            sleepMs         = vDistanceMs - 1;
+            
+            if(VideoDemuxer.IsCustomStream())
+            {
+                var sollDistanceTicks = (int)(startTicks - vFrame.Timestamp);
+                var sollDistanceMs = sollDistanceTicks / 1000;
+                vDistanceMs = (int)((sollDistanceMs / speed) - (elapsedTicks / 1000));
+                Log.Trace($" soll distance {sollDistanceTicks} ticks, {sollDistanceMs} ms, speed {speed}, elapsed {elapsedTicks / 1000}, distance {vDistanceMs}");
+            }
+            // else 
 
+            vDistanceMs     = (int) ((((startTicks - vFrame.Timestamp) / speed) - elapsedTicks) / 1000);
+            sleepMs         = vDistanceMs - 1;
+            if (CanTrace)
+            {
+                long startTime = startTicks / 1000 + VideoDemuxer.StartCustomTimestamp(VideoTimeUnit.Milliseconds);
+                long frameTime = vFrame.Timestamp / 1000 + VideoDemuxer.StartCustomTimestamp(VideoTimeUnit.Milliseconds);
+                Log.Trace($"elapsedTics {elapsedTicks} ({Utils.TicksToTime(elapsedTicks*10)}), startTics {startTicks} ({Utils.TicksToTime(startTicks*10)})");
+                Log.Trace($"frame distance {sleepMs} , frame timestamp {vFrame.Timestamp} / {frameTime}, time {Utils.TicksToTime(frameTime * 10000)}");
+            }
             if (sleepMs < 0) sleepMs = 0;
 
             if (Math.Abs(vDistanceMs - sleepMs) > 5)
@@ -273,8 +291,10 @@ unsafe partial class Player
             }
 
             if (Renderer.RenderPlay(vFrame, false))
+            {
                 Renderer.PresentPlay();
-            
+                Log.Debug($"[reverse] frame presented, ts {vFrame.Timestamp} ");
+            }
             UpdateCurTime(vFrame.Timestamp, VideoDemuxer.IsCustomStream() ? true : false);
 
             vFrame = null;

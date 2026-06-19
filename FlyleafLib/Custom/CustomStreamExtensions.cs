@@ -49,6 +49,31 @@ public static class CustomStreamExtensions
             _ => offset,
         };
     }
+
+    public static long PictureGroupTime(this Stream stream, VideoTimeUnit timeUnit = VideoTimeUnit.Milliseconds)
+    {
+        long offset = 0;
+        if (stream is not ICustomVideoStream custom)
+            return offset;
+        try
+        {
+            var startTime = custom?.StartTimestamp ?? 0;
+            var gopTime = custom?.PictureGroupTimeStamp ?? 0;
+            offset = gopTime - startTime;
+            custom.PictureGroupFrameIndex = 0;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(ex.Message);
+        }
+
+        return timeUnit switch
+        {
+            VideoTimeUnit.Microseconds => offset * Microseconds.InOneMillisecond,
+            VideoTimeUnit.Ticks => offset * Ticks.InOneMillisecond,
+            _ => offset,
+        };
+    }
     public static int ExpectedFrameIndex(this Stream stream) => stream is not ICustomVideoStream custom ? 0 : custom.ExpectedFrameIndex;    
     public static long ExpectedTimestamp(this Stream stream, VideoTimeUnit timeUnit = VideoTimeUnit.Milliseconds) => stream is not ICustomVideoStream custom ? 0 : timeUnit switch
     {
@@ -84,5 +109,6 @@ public static class CustomStreamExtensions
     public static bool IsBufferReady(this Stream stream) => stream is ICustomVideoStream custom ? custom.IsBufferReady : true;
     public static void SetPlayMode(this Stream stream, int PlayMode) { if (stream is ICustomVideoStream custom) custom.Mode = PlayMode; }
 
+    public static void SetPictureGroupIndex(this Stream stream, int frameIndex) { if (stream is ICustomVideoStream custom) custom.PictureGroupFrameIndex = frameIndex; }
     public static double GetSpoolSpeed(this Stream stream) => stream is ICustomVideoStream custom ? custom.SpoolSpeed : 0.0;
 }

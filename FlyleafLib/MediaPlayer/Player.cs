@@ -379,7 +379,7 @@ public unsafe partial class Player : NotifyPropertyChanged, IDisposable
                 else
                 {
                     VideoDemuxer.DisableReversePlayback();
-                    if (VideoDecoder.VideoStream is not null)
+                    if (VideoDecoder.VideoStream is not null && !VideoDemuxer.IsCustomStream())
                         VideoDecoder.GetFrame(VideoDecoder.GetFrameNumber(CurTime))?.Dispose();
                     decoder.RequiresResync = true;
                 }
