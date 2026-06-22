@@ -227,7 +227,7 @@ unsafe partial class Player
 
                 // Recoding*
                 while (vFrames.IsEmpty && status == Status.Playing && VideoDecoder.IsRunning) Thread.Sleep(15);
-                Log.Debug($"ScreamerReverse: waiting loop, vFrames.isEmpty {vFrames.IsEmpty}, status {status}, decoder is running {VideoDecoder.IsRunning}");
+                Log.Trace($"ScreamerReverse: waiting loop, vFrames.isEmpty {vFrames.IsEmpty}, status {status}, decoder is running {VideoDecoder.IsRunning}");
                 OnBufferingCompleted();
                 if (!vFrames.TryDequeue(out vFrame))
                 {
@@ -246,19 +246,9 @@ unsafe partial class Player
                 UpdateCurTime(vFrame.Timestamp, false);
                 Renderer.RenderIdleStop();
                 sw.Restart();
-                Log.Trace("video timer restarted, start frame ticks {startTicks}");
             }
 
             elapsedTicks    = (long)(sw.ElapsedTicks * SWFREQ_TO_TICKS);
-            
-            if(VideoDemuxer.IsCustomStream())
-            {
-                var sollDistanceTicks = (int)(startTicks - vFrame.Timestamp);
-                var sollDistanceMs = sollDistanceTicks / 1000;
-                vDistanceMs = (int)((sollDistanceMs / speed) - (elapsedTicks / 1000));
-                Log.Trace($" soll distance {sollDistanceTicks} ticks, {sollDistanceMs} ms, speed {speed}, elapsed {elapsedTicks / 1000}, distance {vDistanceMs}");
-            }
-            // else 
 
             vDistanceMs     = (int) ((((startTicks - vFrame.Timestamp) / speed) - elapsedTicks) / 1000);
             sleepMs         = vDistanceMs - 1;
