@@ -6,6 +6,7 @@ using static FlyleafLib.Config;
 
 using FlyleafLib.MediaFramework.MediaProgram;
 using FlyleafLib.MediaFramework.MediaStream;
+using FlyleafLib.MediaPlayer;
 
 namespace FlyleafLib.MediaFramework.MediaDemuxer;
 
@@ -1291,10 +1292,11 @@ public unsafe class Demuxer : RunThreadBase
         int ret = 0;
         int allowedErrors = Config.MaxErrors;
         bool gotAVERROR_EXIT = false;
-        bool continueCurrentQueue = false;
-        double lastSpoolSpeed = 0;
         long gopStartTime = 0;
 
+        curReverseStartPts = NoTs;
+        Log.Trace($"reverse queue: {curReverseVideoPackets.Count} packets");
+        
         // To demux further for buffering (related to BufferDuration)
         int maxQueueSize = 4;
         curReverseSeekOffset = av_rescale_q(3 * 1000 * 10000 / 10, Engine.FFmpeg.AV_TIMEBASE_Q, VideoStream.AVStream->time_base);
@@ -1368,42 +1370,33 @@ public unsafe class Demuxer : RunThreadBase
                         }
                         if (CanDebug)
                             Log.Debug($"read frame error {FFmpegEngine.ErrorCodeToMsg(ret)} ({ret})");
-                        Interrupter.SeekRequest();
+
                         if (!this.IsCustomStream())
                         {
+                            Interrupter.SeekRequest();
+
                             if (CanDebug)
                                 Log.Debug($"Seek(ticks {Math.Max(curReverseStartPts - curReverseSeekOffset, VideoStream.StartTimePts)}, backward)");
                             ret = av_seek_frame(fmtCtx, VideoStream.StreamIndex, Math.Max(curReverseStartPts - curReverseSeekOffset, VideoStream.StartTimePts), SeekFlags.Backward);
                         }
-                        else
-                        {
-                            // custom stream - look for prior GoP 
-                            var lastGoP = this.FirstCustomTimestampInGoP(VideoTimeUnit.Milliseconds);
-                            var ts = lastGoP - 1000;
-                            if (CustomIOContext.stream is ICustomVideoStream stream)
-                            {
-                                var mode = stream.Mode;
-                                lastSpoolSpeed = stream.SpoolSpeed;
-                                // continueCurrentQueue = false;
 
-                                if (CanDebug)
-                                    Log.Debug($"Play({ts} ms, mode {mode}, spoolSpeed {lastSpoolSpeed}), last GoP time {lastGoP}");
-                                stream.Play(ts, mode, lastSpoolSpeed);
-                                ret = 0;
-                            }                            
-                        }   
-
-                        if (ret != 0)
+                        if (ret != 0 || this.IsCustomStream())
                         {
                             Status = Status.Stopping;
                             break;
                         }
                         curReverseStopPts = curReverseStartPts;
                         curReverseStartPts = NoTs;
-                        if (this.IsCustomStream())
-                            Thread.Sleep(40);
+                        
                         continue;
                     }
+                    else if (ret == AVERROR_EXIT && this.IsCustomStream())
+                    {
+                        Status = Status.Stopped;
+                        UIInvoke(() => Config.player?.Pause());
+                        break;
+                    }
+
 
                     allowedErrors--;
                     if (CanWarn) Log.Warn($"{ FFmpegEngine.ErrorCodeToMsg(ret)} ({ret})");
@@ -1420,7 +1413,8 @@ public unsafe class Demuxer : RunThreadBase
                 {
                     if ((packet->flags & PktFlags.Key) == 0 && curReverseStartPts == NoTs)
                     {  
-                        Log.Warn($"packet belong to notcompleted gop, size {packet->size}");
+                        Log.Warn($"packet belong to not completed gop, size {packet->size}");
+                        av_packet_unref(packet);
                         continue;
                     }
 
@@ -1435,13 +1429,6 @@ public unsafe class Demuxer : RunThreadBase
                     long frameDuration = 1_000_000 / fps;
                     long frameTime = this.CurCustomTime(VideoTimeUnit.Microseconds);
                     double spoolSpeed = CustomIOContext.stream.GetSpoolSpeed();
-
-                    if (spoolSpeed != lastSpoolSpeed && lastSpoolSpeed != 0)
-                    {
-                        lastSpoolSpeed = spoolSpeed;
-                     //   continueCurrentQueue = false;
-                        curReverseStartPts = NoTs;
-                    }
 
                     packet->pts = (long)(frameTime / stream.Timebase);
                     packet->duration = frameDuration;
@@ -1461,9 +1448,6 @@ public unsafe class Demuxer : RunThreadBase
                     if (curReverseStartPts == NoTs)
                         curReverseStartPts = packet->pts;
 
-                    // If this is a non-standard video stream with the GOP sequence GOP[n], GOP[n+1], GOP[n-2], GOP[n-1]...
-                    continueCurrentQueue = packet->pts > curReverseStartPts && this.IsCustomStream();
-                    
                     if (curReverseVideoPackets.Count > 0 && curReverseStopRequestedPts != NoTs)
                     {
                         var drainPacket = av_packet_alloc();
@@ -1524,7 +1508,7 @@ public unsafe class Demuxer : RunThreadBase
                         curReverseVideoPackets.Add((nint)packet);
                         if (CanTrace)
                             Log.Trace($"[reverse] add packet to reverse packet queue ( count {curReverseVideoPackets.Count})");
-
+ 
                         curReverseStopRequestedPts = curReverseStartPts;
                         curReverseStopPts = NoTs;
                         curReverseStartPts = packet->pts;
@@ -1576,6 +1560,17 @@ public unsafe class Demuxer : RunThreadBase
             }
 
         } while (Status == Status.Running);
+        Log.Debug($"Check reverse queue: {curReverseVideoPackets.Count} packets");
+        if (curReverseVideoPackets.Count > 0)
+        {
+            lock (lockFmtCtx)
+            {
+                foreach (AVPacket* avpacket in curReverseVideoPackets)
+                    av_packet_free(&avpacket);
+                curReverseVideoPackets = [];
+            }
+
+        }  
         Log.Debug("RunInternalReverse: End");
     }
 
@@ -1600,9 +1595,10 @@ public unsafe class Demuxer : RunThreadBase
         else
         {
             if (CustomIOContext.stream is ICustomVideoStream custom)
-            {
+            {  
                 long frameTime = (custom.CurrentTimestamp - custom.StartTimestamp) * Microseconds.InOneMillisecond;
-                curReverseStopRequestedPts = frameTime / VideoStream.AVStream->time_base.Num;
+                var stream = AVStreamToStream[packet->stream_index];
+                curReverseStopRequestedPts = (long)((frameTime + Milliseconds.InOneSecond) / stream.Timebase);
                 Log.Debug($"EnableReversePlayback(timestamp {timestamp}: curReverseStopRequestedPts {curReverseStopRequestedPts}, frame time {frameTime})");
             }
         }

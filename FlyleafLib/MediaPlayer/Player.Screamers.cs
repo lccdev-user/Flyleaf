@@ -194,8 +194,10 @@ unsafe partial class Player
 
         int vDistanceMs, sleepMs;
         long elapsedTicks, startTicks = 0;
+        long elapsedMs, StartMs = 0;
         int retries = 10;
         Log.Debug($"ScreamerReverse: Start, status {status}");
+
         while (status == Status.Playing)
         {
             if (seeks.TryPop(out var seekData))
@@ -217,7 +219,7 @@ unsafe partial class Player
                 OnBufferingStarted();
                 if (reversePlaybackResync)
                 {
-                    Log.Trace("reversePlaybackResync: curTime {CurTime}");
+                    Log.Trace($"reversePlaybackResync: curTime {CurTime}");
                     decoder.Flush();
                     VideoDemuxer.EnableReversePlayback(CurTime);
                     reversePlaybackResync = false;
@@ -249,13 +251,15 @@ unsafe partial class Player
             }
 
             elapsedTicks    = (long)(sw.ElapsedTicks * SWFREQ_TO_TICKS);
+            elapsedMs       = sw.ElapsedMilliseconds;
 
-            vDistanceMs     = (int) ((((startTicks - vFrame.Timestamp) / speed) - elapsedTicks) / 1000);
+            vDistanceMs     = (int) ((startTicks - vFrame.Timestamp) / speed/1000 - elapsedTicks / 10000);
             sleepMs         = vDistanceMs - 1;
             if (CanTrace)
             {
                 long startTime = startTicks / 1000 + VideoDemuxer.StartCustomTimestamp(VideoTimeUnit.Milliseconds);
                 long frameTime = vFrame.Timestamp / 1000 + VideoDemuxer.StartCustomTimestamp(VideoTimeUnit.Milliseconds);
+                Log.Trace($"elapsedMs {elapsedMs}, dist {((startTicks - vFrame.Timestamp)/1000)}, speed {speed}");
                 Log.Trace($"elapsedTics {elapsedTicks} ({Utils.TicksToTime(elapsedTicks*10)}), startTics {startTicks} ({Utils.TicksToTime(startTicks*10)})");
                 Log.Trace($"frame distance {sleepMs} , frame timestamp {vFrame.Timestamp} / {frameTime}, time {Utils.TicksToTime(frameTime * 10000)}");
             }

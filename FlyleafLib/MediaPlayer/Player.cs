@@ -385,7 +385,7 @@ public unsafe partial class Player : NotifyPropertyChanged, IDisposable
                 }
 
                 reversePlaybackResync = false;
-                if (shouldPlay || VideoDemuxer.IsCustomStream()) Play();
+                if (shouldPlay || (VideoDemuxer.IsCustomStream() && value)) Play();
             }
         }
     }
