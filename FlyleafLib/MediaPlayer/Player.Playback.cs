@@ -166,7 +166,6 @@ partial class Player
         {
             if (!canPlay || status == Status.Ended)
                 return;
-            Log.Debug("Player.Pause()");
             status = Status.Paused;
             UI(() => Status = status);
 

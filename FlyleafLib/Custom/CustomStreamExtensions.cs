@@ -1,4 +1,5 @@
 ﻿using FlyleafLib.MediaFramework.MediaDemuxer;
+using System.Reflection;
 
 namespace FlyleafLib.Custom;
 
@@ -18,11 +19,11 @@ public static class CustomStreamExtensions
         _ => custom.LastTimestamp,
     };
 
-    public static long FirstTimestamp(this Stream stream, VideoTimeUnit timeUnit = VideoTimeUnit.Milliseconds) => stream is not ICustomVideoStream custom ? 0 : timeUnit switch
+    public static long FirstTimestampInGoP(this Stream stream, VideoTimeUnit timeUnit = VideoTimeUnit.Milliseconds) => stream is not ICustomVideoStream custom ? 0 : timeUnit switch
     {
-        VideoTimeUnit.Microseconds => custom.FirstTimestamp * Microseconds.InOneMillisecond,
-        VideoTimeUnit.Ticks => custom.FirstTimestamp * Ticks.InOneMillisecond,
-        _ => custom.FirstTimestamp,
+        VideoTimeUnit.Microseconds => custom.FirstTimestampInGoP * Microseconds.InOneMillisecond,
+        VideoTimeUnit.Ticks => custom.FirstTimestampInGoP * Ticks.InOneMillisecond,
+        _ => custom.FirstTimestampInGoP,
     };
 
     public static long CurTime(this Stream stream, VideoTimeUnit timeUnit = VideoTimeUnit.Milliseconds)
@@ -38,6 +39,31 @@ public static class CustomStreamExtensions
         }
         catch (Exception ex)
         {   
+            Console.WriteLine(ex.Message);
+        }
+
+        return timeUnit switch
+        {
+            VideoTimeUnit.Microseconds => offset * Microseconds.InOneMillisecond,
+            VideoTimeUnit.Ticks => offset * Ticks.InOneMillisecond,
+            _ => offset,
+        };
+    }
+
+    public static long PictureGroupTime(this Stream stream, VideoTimeUnit timeUnit = VideoTimeUnit.Milliseconds)
+    {
+        long offset = 0;
+        if (stream is not ICustomVideoStream custom)
+            return offset;
+        try
+        {
+            var startTime = custom?.StartTimestamp ?? 0;
+            var gopTime = custom?.PictureGroupTimeStamp ?? 0;
+            offset = gopTime - startTime;
+            custom.PictureGroupFrameIndex = 0;
+        }
+        catch (Exception ex)
+        {
             Console.WriteLine(ex.Message);
         }
 
@@ -82,4 +108,7 @@ public static class CustomStreamExtensions
     public static bool IsCustomPlayStopMode(this Stream stream) => stream is ICustomVideoStream custom ? custom.IsPlayStopMode : false;
     public static bool IsBufferReady(this Stream stream) => stream is ICustomVideoStream custom ? custom.IsBufferReady : true;
     public static void SetPlayMode(this Stream stream, int PlayMode) { if (stream is ICustomVideoStream custom) custom.Mode = PlayMode; }
+
+    public static void SetPictureGroupIndex(this Stream stream, int frameIndex) { if (stream is ICustomVideoStream custom) custom.PictureGroupFrameIndex = frameIndex; }
+    public static double GetSpoolSpeed(this Stream stream) => stream is ICustomVideoStream custom ? custom.SpoolSpeed : 0.0;
 }

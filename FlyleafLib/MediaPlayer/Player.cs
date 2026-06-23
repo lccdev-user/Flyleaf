@@ -379,13 +379,13 @@ public unsafe partial class Player : NotifyPropertyChanged, IDisposable
                 else
                 {
                     VideoDemuxer.DisableReversePlayback();
-
-                    VideoDecoder.GetFrame(VideoDecoder.GetFrameNumber(CurTime))?.Dispose();
+                    if (VideoDecoder.VideoStream is not null && !VideoDemuxer.IsCustomStream())
+                        VideoDecoder.GetFrame(VideoDecoder.GetFrameNumber(CurTime))?.Dispose();
                     decoder.RequiresResync = true;
                 }
 
                 reversePlaybackResync = false;
-                if (shouldPlay || VideoDemuxer.IsCustomStream()) Play();
+                if (shouldPlay || (VideoDemuxer.IsCustomStream() && value)) Play();
             }
         }
     }

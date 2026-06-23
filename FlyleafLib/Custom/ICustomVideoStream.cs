@@ -19,7 +19,7 @@ public interface ICustomVideoStream
     /// <summary>
     /// The first timestamp of the video response (in milliseconds).
     /// </summary>
-    long FirstTimestamp { get; }
+    long FirstTimestampInGoP { get; }
     /// <summary>
     ///
     /// </summary>
@@ -27,6 +27,9 @@ public interface ICustomVideoStream
     long LastTimestamp { get; }
     Double FrameDuration { get; }
     int FramesPerSecond { get; }
+    long PictureGroupTimeStamp { get; }
+    double PictureGroupFrameDuration { get; }
+    int PictureGroupFrameIndex { get; set; }
     bool IsLive { get; }
     int ExpectedFrameIndex { get; }
     long FrameCount { get; set; }
@@ -34,5 +37,7 @@ public interface ICustomVideoStream
     bool SearchCompleted { get; set; }
     bool IsBufferReady { get; }
     int Mode { get; set; }
+    double SpoolSpeed { get; set; }
+    void Play(long timestamp, int playMode, double spoolSpeed);
 }
 #nullable disable

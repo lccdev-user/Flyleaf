@@ -1,4 +1,5 @@
 ﻿using FlyleafLib.MediaFramework.MediaDemuxer;
+using FlyleafLib.MediaFramework.MediaRemuxer;
 
 namespace FlyleafLib.Custom;
 #nullable enable
@@ -6,10 +7,11 @@ public unsafe static class DemuxerExtensions
 {
     public static bool IsCustomStream(this Demuxer demuxer) => demuxer.CustomIOContext.stream is ICustomVideoStream stream;
     public static bool IsCustomStreamLive(this Demuxer demuxer) => demuxer.IsCustomStream() ? demuxer.CustomIOContext.stream.IsCustomStreamLive() : false;
-    public static long FirstCustomTimestamp(this Demuxer demuxer, VideoTimeUnit unit) => demuxer.IsCustomStream() ? demuxer.CustomIOContext.stream.FirstTimestamp(unit) : 0;
+    public static long FirstCustomTimestampInGoP(this Demuxer demuxer, VideoTimeUnit unit) => demuxer.IsCustomStream() ? demuxer.CustomIOContext.stream.FirstTimestampInGoP(unit) : 0;
     public static long StartCustomTimestamp(this Demuxer demuxer, VideoTimeUnit unit) => demuxer.IsCustomStream() ? demuxer.CustomIOContext.stream.StartTimestamp (unit) : 0;
     public static long LastCustomTimestamp(this Demuxer demuxer, VideoTimeUnit unit) => demuxer.IsCustomStream() ? demuxer.CustomIOContext.stream.LastTimestamp(unit) : 0;
     public static long CurCustomTime(this Demuxer demuxer, VideoTimeUnit unit) => demuxer.IsCustomStream() ? demuxer.CustomIOContext.stream.CurTime(unit) : 0;
+    public static long PictureGroupTime(this Demuxer demuxer, VideoTimeUnit unit) => demuxer.IsCustomStream() ? demuxer.CustomIOContext.stream.PictureGroupTime(unit) : 0;
     public static long ExpectedCustomTimestamp(this Demuxer demuxer, VideoTimeUnit unit) => demuxer.IsCustomStream() ? demuxer.CustomIOContext.stream.ExpectedTimestamp (unit) : 0;
     public static int ExpectedCustomFrameIndex(this Demuxer demuxer) => demuxer.IsCustomStream() ? demuxer.CustomIOContext.stream.ExpectedFrameIndex() : 0;
     public static long CustomDuration(this Demuxer demuxer) => demuxer.IsCustomStream() ? demuxer.CustomIOContext.stream.GetDuration() : 40;
@@ -59,16 +61,30 @@ public unsafe static class DemuxerExtensions
         Log?.Trace($"SkipFrameBySearch: timestamp {timestamp}, expected {stream.TargetTimestamp}, distance {distance}, result {distance < - 50}");
         return distance < - 50;        
     }
-    public static void SetPacketPts(this Demuxer demuxer, AVPacket* packet, out double timeBase, LogHandler? Log = null)
+    public static void SetPacketPts(this Demuxer demuxer, AVPacket* packet, out double timeBase,  ref int gopFrameIndex, LogHandler? Log = null)
     {
         timeBase = 0.0F;
+        
         if (demuxer.CustomIOContext.stream is not ICustomVideoStream stream)
             return;
+
+        long frameTime = 0;
+        if ((packet->flags & PktFlags.Key) != 0)
+        {
+            frameTime = demuxer.PictureGroupTime(VideoTimeUnit.Ticks);
+            gopFrameIndex = 0;
+        }
+        else
+        {
+            stream.PictureGroupFrameIndex = gopFrameIndex;
+            frameTime = demuxer.CurCustomTime(VideoTimeUnit.Ticks);
+        }
+        gopFrameIndex++;
 
         var videoStream = demuxer.AVStreamToStream[packet->stream_index];
         timeBase = videoStream.Timebase;
         long frameDuration = 1_000_000 / demuxer.CustomFramePerSecond();
-        long frameTime = demuxer.CurCustomTime(VideoTimeUnit.Ticks);
+        
         if (timeBase > 0)
         {
             Log?.Trace($"SetPacketPts: frame ts {frameTime}, pts {(long)(frameTime / timeBase)},timeBase {timeBase}, timestamp {(frameTime / 10_000) + stream.StartTimestamp}");
@@ -82,13 +98,18 @@ public unsafe static class DemuxerExtensions
         if (demuxer.CustomIOContext.stream is not ICustomVideoStream stream)
             return 0;
         return timestamp + stream.StartTimestamp;
-    }
+    }    
     public static bool IsVideoBufferReady(this Demuxer demuxer) => demuxer.IsCustomStream() ? demuxer.CustomIOContext.stream.IsBufferReady() : false;
 
     public static void SetPlayMode(this Demuxer demuxer, int playMode)
     {
         if (demuxer.CustomIOContext.stream is ICustomVideoStream custom)
             custom.Mode = playMode;
+    }
+    public static void SetPictureGroupFrameIndex(this Demuxer demuxer, int frameIndex)
+    {
+        if (demuxer.CustomIOContext.stream is ICustomVideoStream custom)
+            custom.PictureGroupFrameIndex = frameIndex;
     }
 }
 #nullable disable

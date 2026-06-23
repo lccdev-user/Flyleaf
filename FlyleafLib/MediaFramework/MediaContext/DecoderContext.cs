@@ -496,6 +496,7 @@ public unsafe partial class DecoderContext : PluginHandler
         int ret;
         int allowedErrors = Config.Decoder.MaxErrors;
         double timeBase = 0;
+        int gopFrameIndex = 0;
         AVPacket* packet;
         Log.Debug($"GetVideoFrame( ts {timestamp})");
         lock (VideoDemuxer.lockFmtCtx)
@@ -526,7 +527,7 @@ public unsafe partial class DecoderContext : PluginHandler
                 Log.Trace($"[{stream.Type}] DTS: {(dts == -1 ? "-" : TicksToTime(dts))} PTS: {(pts == -1 ? "-" : TicksToTime(pts))} | FLPTS: {(pts == -1 ? "-" : TicksToTime(pts - VideoDemuxer.StartTime))} | CurTime: {TicksToTime(VideoDemuxer.CurTime)} | Buffered: {TicksToTime(VideoDemuxer.BufferedDuration)}");
             }
 
-            VideoDemuxer.SetPacketPts(packet, out timeBase);
+            VideoDemuxer.SetPacketPts(packet, out timeBase, ref gopFrameIndex, Log);
             
             var codecType = VideoDemuxer.FormatContext->streams[packet->stream_index]->codecpar->codec_type;
 
