@@ -1121,6 +1121,44 @@ public unsafe class Demuxer : RunThreadBase
         }
     }
 
+    /// <summary>
+    /// Clears the buffered and latched state of a custom IO stream, for restarting a read at a new
+    /// position without seeking.
+    /// </summary>
+    /// <remarks>
+    /// A custom stream addressed by time repositions itself; the demuxer only has to be told to stop
+    /// believing what it last saw. Two things have to go. The end-of-file flag latches on the first
+    /// read that returns nothing and, once set, avio stops calling the read callback at all - so a
+    /// stream that runs dry once would never be read again. And the buffer still holds bytes from
+    /// wherever the stream used to be, which would reach the parser as a partial picture before the
+    /// new position's first byte does.
+    /// </remarks>
+    public void FlushCustomIo()
+    {
+        if (!this.IsCustomStream())
+            return;
+
+        lock (lockFmtCtx)
+        {
+            if (Disposed || fmtCtx == null)
+                return;
+
+            if (fmtCtx->pb != null)
+            {
+                avio_flush(fmtCtx->pb);
+                fmtCtx->pb->error = 0;
+                fmtCtx->pb->eof_reached = 0;
+            }
+
+            _ = avformat_flush(fmtCtx);
+            DisposePackets();
+
+            lock (lockStatus)
+                if (Status == Status.Ended)
+                    Status = Status.Stopped;
+        }
+    }
+
     protected override void RunInternal()
     {
         if (IsReversePlayback)

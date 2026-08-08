@@ -52,6 +52,33 @@ public unsafe static class DemuxerExtensions
         Log?.Trace($"IsSearchCompleted: pts {frame->pts}, timeBase {timeBase}, frameTime {frameTime}, expected {expectedTime}");
         return (frameTime >= expectedTime) || (expectedTime == 0);
     }
+    /// <summary>
+    /// Whether a decoded frame sits before the moment playback was asked to start from, and so should
+    /// be thrown away rather than queued for display.
+    /// </summary>
+    /// <remarks>
+    /// Dropped here, after decoding, because the frames that follow are predicted from these. Dropped
+    /// here rather than at presentation time so that the first frame the player sees is the one asked
+    /// for: the screamer paces everything from that frame's timestamp, and handing it a frame it will
+    /// only refuse to show would have it sit on a blank screen for a whole group.
+    /// </remarks>
+    public static bool SkipFrameBeforeDisplayStart(this Demuxer demuxer, AVFrame* frame, double timeBase, LogHandler? Log = null)
+    {
+        if (demuxer.CustomIOContext.stream is not ICustomVideoStream stream)
+            return false;
+
+        var displayFrom = stream.DisplayFromTimestamp;
+        if (displayFrom <= 0)
+            return false;
+
+        var frameTime = (long)(frame->pts * timeBase) / Ticks.InOneMillisecond + stream.StartTimestamp;
+        var skip = frameTime < displayFrom;
+
+        if (skip)
+            Log?.Trace($"SkipFrameBeforeDisplayStart: frameTime {frameTime}, displayFrom {displayFrom}");
+
+        return skip;
+    }
     public static bool SkipFrameBySearch(this Demuxer demuxer, long timestamp, LogHandler? Log = null)
     {
         if (demuxer.CustomIOContext.stream is not ICustomVideoStream stream || !stream.IsPlayStopMode)
