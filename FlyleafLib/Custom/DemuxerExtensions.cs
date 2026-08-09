@@ -33,6 +33,24 @@ public unsafe static class DemuxerExtensions
             custom.FrameCount = 0;
     }
     public static bool IsCustomPlayStopMode(this Demuxer demuxer) => demuxer.IsCustomStream() ? demuxer.CustomIOContext.stream.IsCustomPlayStopMode() : false;
+    /// <summary>
+    /// How far before the moment asked for a picture may sit and still count as reaching it.
+    /// </summary>
+    /// <remarks>
+    /// The picture covering a moment is the one at or after it, so a search would naturally accept
+    /// nothing earlier. That breaks at the newest moment a camera has recorded: the archive keeps
+    /// growing, so the extent a client was told about can be a picture ahead of the newest one any
+    /// group actually holds, and demanding a picture at or after it matches nothing at all. Since an
+    /// empty read ends the demuxer, "nothing at all" is permanent - the screen stays blank until
+    /// something else moves the player.
+    /// <para>
+    /// A tolerance of well under one frame interval costs nothing anywhere else and makes the two
+    /// checks agree. <see cref="SkipFrameBySearch"/> has always allowed this much; only the search
+    /// completion test did not, so a picture could pass one and fail the other.
+    /// </para>
+    /// </remarks>
+    public const long SearchToleranceMs = 50;
+
     public static bool IsSearchCompleted(this Demuxer demuxer, long timestamp, LogHandler? Log = null)
     {
         if (demuxer.CustomIOContext.stream is not ICustomVideoStream stream)
@@ -40,7 +58,7 @@ public unsafe static class DemuxerExtensions
 
         long frameTime = timestamp + stream.StartTimestamp;
         Log?.Trace($"IsSearchCompleted: timestamp {timestamp} ms, frame time {frameTime}, expected {stream.TargetTimestamp}");
-        return stream.IsPlayStopMode && frameTime >= stream.TargetTimestamp;
+        return stream.IsPlayStopMode && frameTime >= stream.TargetTimestamp - SearchToleranceMs;
     }
     public static bool IsSearchCompleted(this Demuxer demuxer, AVFrame* frame, double timeBase, LogHandler? Log = null)
     {
@@ -50,7 +68,7 @@ public unsafe static class DemuxerExtensions
         frameTime += demuxer.StartCustomTimestamp(VideoTimeUnit.Milliseconds);
         var expectedTime = demuxer.ExpectedCustomTimestamp(VideoTimeUnit.Milliseconds);
         Log?.Trace($"IsSearchCompleted: pts {frame->pts}, timeBase {timeBase}, frameTime {frameTime}, expected {expectedTime}");
-        return (frameTime >= expectedTime) || (expectedTime == 0);
+        return (frameTime >= expectedTime - SearchToleranceMs) || (expectedTime == 0);
     }
     /// <summary>
     /// Whether a decoded frame sits before the moment playback was asked to start from, and so should
@@ -85,8 +103,8 @@ public unsafe static class DemuxerExtensions
             return false;
 
         var distance = timestamp - stream.TargetTimestamp;
-        Log?.Trace($"SkipFrameBySearch: timestamp {timestamp}, expected {stream.TargetTimestamp}, distance {distance}, result {distance < - 50}");
-        return distance < - 50;        
+        Log?.Trace($"SkipFrameBySearch: timestamp {timestamp}, expected {stream.TargetTimestamp}, distance {distance}, result {distance < -SearchToleranceMs}");
+        return distance < -SearchToleranceMs;
     }
     public static void SetPacketPts(this Demuxer demuxer, AVPacket* packet, out double timeBase,  ref int gopFrameIndex, LogHandler? Log = null)
     {
