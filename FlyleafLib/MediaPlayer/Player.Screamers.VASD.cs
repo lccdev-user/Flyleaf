@@ -285,7 +285,12 @@ unsafe partial class Player
                         OnBufferingCompleted();
                     else
                         Log.Warn("[V] Buffer Empty.1");
-                    if (!(VideoDemuxer.IsCustomStream() && !VideoDemuxer.IsCustomPlayStopMode()))
+
+                    // A custom stream normally has no end - it waits for the next moment to be asked
+                    // for - so running dry means "nothing yet" and buffering is retried. Once the
+                    // decoder itself has ended there is genuinely nothing more coming, and retrying
+                    // would spin here forever.
+                    if (!(VideoDemuxer.IsCustomStream() && !VideoDemuxer.IsCustomPlayStopMode()) || decoderHasEnded)
                         break;
                     else
                     {

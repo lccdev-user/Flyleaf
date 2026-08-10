@@ -25,6 +25,17 @@ public interface ICustomVideoStream
     /// </summary>
     long CurrentTimestamp { get; }
     long LastTimestamp { get; }
+    /// <summary>
+    /// The first timestamp (in milliseconds) worth presenting, or 0 to present everything decoded.
+    /// </summary>
+    /// <remarks>
+    /// A stream addressed by time is served whole groups, and a group begins at its key picture - so
+    /// playing on from a moment inside one delivers pictures before it that were already watched.
+    /// They have to be decoded, because the pictures after them are predicted from them, but they
+    /// must not be queued for display. Defaults to showing everything, which is what a stream that
+    /// does not work in groups wants.
+    /// </remarks>
+    long DisplayFromTimestamp => 0;
     Double FrameDuration { get; }
     int FramesPerSecond { get; }
     long PictureGroupTimeStamp { get; }

@@ -4,7 +4,7 @@ namespace FlyleafLib.Controls.WPF;
 
 public static class DebugLogger
 {
-    private static readonly bool IsEnabled = true;
+    private static readonly bool IsEnabled = false;
     private static LogHandler Log = new("[DebugLogger".PadRight(25, ' ') + "]");
 
     public static void Print(string message)

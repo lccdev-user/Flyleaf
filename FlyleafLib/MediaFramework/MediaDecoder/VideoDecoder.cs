@@ -658,6 +658,14 @@ public unsafe class VideoDecoder : DecoderBase
                 return -1234;
         }
 
+        // Decoded so that the frames predicted from it can be, but earlier than the moment playback
+        // was asked to start from - so it never becomes a frame the player could show.
+        if (demuxer.SkipFrameBeforeDisplayStart(frame, VideoStream.Timebase, Log))
+        {
+            av_frame_unref(frame);
+            return RecvAVFrame();
+        }
+
         if (skipSpeedFrames > 1)
         {
             curSpeedFrame++;

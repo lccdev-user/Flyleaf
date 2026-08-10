@@ -33,6 +33,24 @@ public unsafe static class DemuxerExtensions
             custom.FrameCount = 0;
     }
     public static bool IsCustomPlayStopMode(this Demuxer demuxer) => demuxer.IsCustomStream() ? demuxer.CustomIOContext.stream.IsCustomPlayStopMode() : false;
+    /// <summary>
+    /// How far before the moment asked for a picture may sit and still count as reaching it.
+    /// </summary>
+    /// <remarks>
+    /// The picture covering a moment is the one at or after it, so a search would naturally accept
+    /// nothing earlier. That breaks at the newest moment a camera has recorded: the archive keeps
+    /// growing, so the extent a client was told about can be a picture ahead of the newest one any
+    /// group actually holds, and demanding a picture at or after it matches nothing at all. Since an
+    /// empty read ends the demuxer, "nothing at all" is permanent - the screen stays blank until
+    /// something else moves the player.
+    /// <para>
+    /// A tolerance of well under one frame interval costs nothing anywhere else and makes the two
+    /// checks agree. <see cref="SkipFrameBySearch"/> has always allowed this much;
+    /// A picture could pass one and fail the other.
+    /// </para>
+    /// </remarks>
+    public const long SearchToleranceMs = 50;
+
     public static bool IsSearchCompleted(this Demuxer demuxer, long timestamp, LogHandler? Log = null)
     {
         if (demuxer.CustomIOContext.stream is not ICustomVideoStream stream)
@@ -40,7 +58,7 @@ public unsafe static class DemuxerExtensions
 
         long frameTime = timestamp + stream.StartTimestamp;
         Log?.Trace($"IsSearchCompleted: timestamp {timestamp} ms, frame time {frameTime}, expected {stream.TargetTimestamp}");
-        return stream.IsPlayStopMode && frameTime >= stream.TargetTimestamp;
+        return stream.IsPlayStopMode && frameTime >= stream.TargetTimestamp - SearchToleranceMs;
     }
     public static bool IsSearchCompleted(this Demuxer demuxer, AVFrame* frame, double timeBase, LogHandler? Log = null)
     {
@@ -50,7 +68,34 @@ public unsafe static class DemuxerExtensions
         frameTime += demuxer.StartCustomTimestamp(VideoTimeUnit.Milliseconds);
         var expectedTime = demuxer.ExpectedCustomTimestamp(VideoTimeUnit.Milliseconds);
         Log?.Trace($"IsSearchCompleted: pts {frame->pts}, timeBase {timeBase}, frameTime {frameTime}, expected {expectedTime}");
-        return (frameTime >= expectedTime) || (expectedTime == 0);
+        return (frameTime >= expectedTime - SearchToleranceMs) || (expectedTime == 0);
+    }
+    /// <summary>
+    /// Whether a decoded frame sits before the moment playback was asked to start from, and so should
+    /// be thrown away rather than queued for display.
+    /// </summary>
+    /// <remarks>
+    /// Dropped here, after decoding, because the frames that follow are predicted from these. Dropped
+    /// here rather than at presentation time so that the first frame the player sees is the one asked
+    /// for: the screamer paces everything from that frame's timestamp, and handing it a frame it will
+    /// only refuse to show would have it sit on a blank screen for a whole group.
+    /// </remarks>
+    public static bool SkipFrameBeforeDisplayStart(this Demuxer demuxer, AVFrame* frame, double timeBase, LogHandler? Log = null)
+    {
+        if (demuxer.CustomIOContext.stream is not ICustomVideoStream stream)
+            return false;
+
+        var displayFrom = stream.DisplayFromTimestamp;
+        if (displayFrom <= 0)
+            return false;
+
+        var frameTime = (long)(frame->pts * timeBase) / Ticks.InOneMillisecond + stream.StartTimestamp;
+        var skip = frameTime < displayFrom;
+
+        if (skip)
+            Log?.Trace($"SkipFrameBeforeDisplayStart: frameTime {frameTime}, displayFrom {displayFrom}");
+
+        return skip;
     }
     public static bool SkipFrameBySearch(this Demuxer demuxer, long timestamp, LogHandler? Log = null)
     {
@@ -58,13 +103,13 @@ public unsafe static class DemuxerExtensions
             return false;
 
         var distance = timestamp - stream.TargetTimestamp;
-        Log?.Trace($"SkipFrameBySearch: timestamp {timestamp}, expected {stream.TargetTimestamp}, distance {distance}, result {distance < - 50}");
-        return distance < - 50;        
+        Log?.Trace($"SkipFrameBySearch: timestamp {timestamp}, expected {stream.TargetTimestamp}, distance {distance}, result {distance < -SearchToleranceMs}");
+        return distance < -SearchToleranceMs;
     }
     public static void SetPacketPts(this Demuxer demuxer, AVPacket* packet, out double timeBase,  ref int gopFrameIndex, LogHandler? Log = null)
     {
         timeBase = 0.0F;
-        
+
         if (demuxer.CustomIOContext.stream is not ICustomVideoStream stream)
             return;
 
@@ -73,11 +118,11 @@ public unsafe static class DemuxerExtensions
            demuxer.PictureGroupTime(VideoTimeUnit.Ticks); // synchronizes the current time with the time of the new GOP
 
         frameTime = demuxer.CurCustomTime(VideoTimeUnit.Ticks);
-        
+
         var videoStream = demuxer.AVStreamToStream[packet->stream_index];
         timeBase = videoStream.Timebase;
         long frameDuration = 1_000_000 / demuxer.CustomFramePerSecond();
-        
+
         if (timeBase > 0)
         {
             Log?.Trace($"SetPacketPts: frame ts {frameTime}, pts {(long)(frameTime / timeBase)},timeBase {timeBase}, timestamp {(frameTime / 10_000) + stream.StartTimestamp}");
@@ -91,7 +136,7 @@ public unsafe static class DemuxerExtensions
         if (demuxer.CustomIOContext.stream is not ICustomVideoStream stream)
             return 0;
         return timestamp + stream.StartTimestamp;
-    }    
+    }
     public static bool IsVideoBufferReady(this Demuxer demuxer) => demuxer.IsCustomStream() ? demuxer.CustomIOContext.stream.IsBufferReady() : false;
 
     public static void SetPlayMode(this Demuxer demuxer, int playMode)
