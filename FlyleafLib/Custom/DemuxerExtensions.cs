@@ -45,8 +45,8 @@ public unsafe static class DemuxerExtensions
     /// something else moves the player.
     /// <para>
     /// A tolerance of well under one frame interval costs nothing anywhere else and makes the two
-    /// checks agree. <see cref="SkipFrameBySearch"/> has always allowed this much; only the search
-    /// completion test did not, so a picture could pass one and fail the other.
+    /// checks agree. <see cref="SkipFrameBySearch"/> has always allowed this much;
+    /// A picture could pass one and fail the other.
     /// </para>
     /// </remarks>
     public const long SearchToleranceMs = 50;
@@ -109,7 +109,7 @@ public unsafe static class DemuxerExtensions
     public static void SetPacketPts(this Demuxer demuxer, AVPacket* packet, out double timeBase,  ref int gopFrameIndex, LogHandler? Log = null)
     {
         timeBase = 0.0F;
-        
+
         if (demuxer.CustomIOContext.stream is not ICustomVideoStream stream)
             return;
 
@@ -118,11 +118,11 @@ public unsafe static class DemuxerExtensions
            demuxer.PictureGroupTime(VideoTimeUnit.Ticks); // synchronizes the current time with the time of the new GOP
 
         frameTime = demuxer.CurCustomTime(VideoTimeUnit.Ticks);
-        
+
         var videoStream = demuxer.AVStreamToStream[packet->stream_index];
         timeBase = videoStream.Timebase;
         long frameDuration = 1_000_000 / demuxer.CustomFramePerSecond();
-        
+
         if (timeBase > 0)
         {
             Log?.Trace($"SetPacketPts: frame ts {frameTime}, pts {(long)(frameTime / timeBase)},timeBase {timeBase}, timestamp {(frameTime / 10_000) + stream.StartTimestamp}");
@@ -136,7 +136,7 @@ public unsafe static class DemuxerExtensions
         if (demuxer.CustomIOContext.stream is not ICustomVideoStream stream)
             return 0;
         return timestamp + stream.StartTimestamp;
-    }    
+    }
     public static bool IsVideoBufferReady(this Demuxer demuxer) => demuxer.IsCustomStream() ? demuxer.CustomIOContext.stream.IsBufferReady() : false;
 
     public static void SetPlayMode(this Demuxer demuxer, int playMode)
