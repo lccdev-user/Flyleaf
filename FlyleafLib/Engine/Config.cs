@@ -1094,6 +1094,17 @@ public class EngineConfig
     public VideoPresentMode VideoPresentMode { get; set; } = VideoPresentMode.Auto;
 
     /// <summary>
+    /// <para>Creates the D3D11 device with the debug/SDK validation layer (when available).</para>
+    /// <para>Off by default: the layer raises a fatal breakpoint (STATUS_BREAKPOINT) when the render
+    /// device is destroyed while a <b>cross-adapter</b> composition swap-chain's DWM flip proxies still
+    /// reference it (render adapter != display adapter). DWM releases those references lazily and they
+    /// cannot be drained before <c>device.Dispose()</c>, so a Stop/Reset tears the device down with them
+    /// still live. Under a debugger this looks like a hang at the device release; without one the process
+    /// exits. Release builds never enabled it. Turn it on only to validate D3D usage.</para>
+    /// </summary>
+    public bool     DebugD3D11              { get; set; }
+
+    /// <summary>
     /// Loads engine's configuration
     /// </summary>
     /// <param name="path">Absolute or relative path to load the configuraiton</param>
