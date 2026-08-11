@@ -20,6 +20,7 @@ internal sealed class DrawingSurfacePresenter : IVideoPresenter
     // Compositor-side opened shared texture cache (same-adapter path)
     private ID3D11Texture2D _openedTexture;
     private nint _openedHandle;
+    private bool _graphicsDeviceHasBeenIntialized;
 
     public DrawingSurfacePresenter()
     {
@@ -63,13 +64,18 @@ internal sealed class DrawingSurfacePresenter : IVideoPresenter
         _surface.UnloadContent -= OnUnloadContent;
         _surface.Draw -= OnDraw;
         ResetOpenedTexture();
-        (_surface.Source as D3D11ImageSource)?.Dispose();
+        if (_graphicsDeviceHasBeenIntialized)
+        {
+            (_surface.Source as D3D11ImageSource)?.Dispose();
+            _graphicsDeviceHasBeenIntialized = false;
+        }
     }
 
     private void OnLoadContent(object sender, DrawingSurfaceEventArgs e)
     {
         _compositorDevice = e.Device;
         IsLoaded = true;
+        _graphicsDeviceHasBeenIntialized = true;
         _provider?.SetCompositorDevice(_compositorDevice);
         DebugLogger.Print("[FLB] DrawingSurface LoadContent");
     }
