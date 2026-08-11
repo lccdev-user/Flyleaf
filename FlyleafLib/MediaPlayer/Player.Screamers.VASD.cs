@@ -424,6 +424,13 @@ unsafe partial class Player
                 Thread.Sleep(vDistanceMs);
             }
 
+            // Settled before the frame is presented/raised, not after: CurTime notifies subscribers
+            // synchronously below, and a subscriber reacting to that notification (e.g. stepping off it)
+            // must see the settled position already, not the demuxer's read-ahead one
+            var searchCompletedNow = VideoDemuxer.IsSearchCompleted(VideoDemuxer.ToCustomTimestamp(vFrame.Timestamp / Ticks.InOneMillisecond));
+            if (searchCompletedNow)
+                VideoDemuxer.CompleteCustomSearch();
+
             // Present Current | Render Next
             if (!refreshed)
             {
@@ -442,7 +449,7 @@ unsafe partial class Player
             else
                 refreshed = false;
 
-            if (VideoDemuxer.IsSearchCompleted(VideoDemuxer.ToCustomTimestamp(vFrame.Timestamp / Ticks.InOneMillisecond)))
+            if (searchCompletedNow)
             {
                 if (CanDebug) Log.Debug($"PlayVASD - search completed, showCnt {showFrameCount}, displayed {framesDisplayed}");
                 status = Status.Paused;

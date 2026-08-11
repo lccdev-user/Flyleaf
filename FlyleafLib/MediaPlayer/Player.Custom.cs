@@ -25,10 +25,11 @@ public unsafe partial class Player
             {
                 Renderer.RenderRequest(vFrame);
                 frameTimestamp = VideoDemuxer.ToCustomTimestamp(vFrame.Timestamp / Ticks.InOneMillisecond);
+                // Only update cur time when target frame is reached, mirrors PlayVASD
+                UpdateCurTime(vFrame.Timestamp);
+                Raise(nameof(CurTime));
             }
 
-            UpdateCurTime(vFrame.Timestamp);
-            Raise(nameof(CurTime));
             showFrameCount++;
 
             // Required for buffering on paused

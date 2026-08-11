@@ -210,7 +210,16 @@ public unsafe partial class Player : NotifyPropertyChanged, IDisposable
         }
     }
     internal long _CurTime, curTime;
-    internal void SetCurTime() => Set(ref _CurTime, curTime, true, nameof(CurTime));
+    // Skipped while a custom stream's search hasn't settled
+    // callers of this (a decode-loop raise, the periodic UI refresh tick) have no way to know that themselves,
+    // and raising here would tell a subscriber "here is the current position" using the demuxer's read-ahead point, not a real one.
+    internal void SetCurTime()
+    {
+        if (VideoDemuxer.HasUnsettledCustomSearch())
+            return;
+
+        Set(ref _CurTime, curTime, true, nameof(CurTime));
+    }
     void UpdateCurTime(long ts, bool skipRefreshType = true)
     {
         if (!VideoDemuxer.IsHLSLive)
