@@ -105,10 +105,12 @@ public unsafe partial class Renderer : NotifyPropertyChanged
 
         if (CanDebug) Log.Debug("Initializing");
 
+        // Opt-in only (Engine.Config.DebugD3D11). The debug layer raises a fatal breakpoint when the
+        // device is released with a cross-adapter composition swap-chain's DWM flip proxies still live
+        // (see EngineConfig.DebugD3D11), which turns a Stop/Reset into an apparent hang under a debugger.
         DeviceCreationFlags debugFlag = DeviceCreationFlags.None;
-        #if DEBUG
-        if (D3D11.SdkLayersAvailable()) debugFlag |= DeviceCreationFlags.Debug;
-        #endif
+        if (Engine.Config.DebugD3D11 && D3D11.SdkLayersAvailable())
+            debugFlag |= DeviceCreationFlags.Debug;
 
         Result result;
 
@@ -250,7 +252,7 @@ public unsafe partial class Renderer : NotifyPropertyChanged
             Frames.Dispose();
             D3Dispose();
             FLDispose();
-            
+
             CustomDispose();
 
             if (device2d != null)
