@@ -232,6 +232,7 @@ public unsafe partial class Player : NotifyPropertyChanged, IDisposable
                 curTime = ts;
             }
 
+            VideoDemuxer.UpdateCustomRenderedTimestamp(ts);
             if (skipRefreshType
                 || Config.Player.UICurTime == UIRefreshType.PerFrame
                 ||(Config.Player.UICurTime == UIRefreshType.PerFrameSecond && _CurTime / 1_000_0000 != ts / 1_000_0000))

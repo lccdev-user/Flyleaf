@@ -287,9 +287,9 @@ unsafe partial class Player
             if (Renderer.RenderPlay(vFrame, false))
             {
                 Renderer.PresentPlay();
+                UpdateCurTime(vFrame.Timestamp, VideoDemuxer.IsCustomStream() ? true : false);
                 Log.Debug($"[reverse] frame presented, ts {vFrame.Timestamp} ");
             }
-            UpdateCurTime(vFrame.Timestamp, VideoDemuxer.IsCustomStream() ? true : false);
 
             vFrame = null;
             int dequeueRetries  = MAX_DEQUEUE_RETRIES;

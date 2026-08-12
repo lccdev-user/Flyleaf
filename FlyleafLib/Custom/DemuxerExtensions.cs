@@ -169,5 +169,11 @@ public unsafe static class DemuxerExtensions
         if (demuxer.CustomIOContext.stream is ICustomVideoStream custom)
             custom.PictureGroupFrameIndex = frameIndex;
     }
+    public static void UpdateCustomRenderedTimestamp(this Demuxer demuxer, long frameTicks)
+    {
+        if (demuxer.CustomIOContext.stream is not ICustomVideoStream stream)
+            return;
+        stream.CurrentTimestamp = demuxer.ToCustomTimestamp(frameTicks / Ticks.InOneMillisecond);
+    }
 }
 #nullable disable
