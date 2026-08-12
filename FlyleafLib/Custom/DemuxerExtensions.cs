@@ -60,6 +60,26 @@ public unsafe static class DemuxerExtensions
         Log?.Trace($"IsSearchCompleted: timestamp {timestamp} ms, frame time {frameTime}, expected {stream.TargetTimestamp}");
         return stream.IsPlayStopMode && frameTime >= stream.TargetTimestamp - SearchToleranceMs;
     }
+
+    /// <summary>
+    /// Settles a custom stream's reported current time on the picture the search actually reached,
+    /// once <see cref="IsSearchCompleted(Demuxer, long, LogHandler)"/> says it's done. No-op for
+    /// non-custom streams.
+    /// </summary>
+    public static void CompleteCustomSearch(this Demuxer demuxer)
+    {
+        if (demuxer.CustomIOContext.stream is ICustomVideoStream stream)
+            stream.SearchCompleted = true;
+    }
+
+    /// <summary>
+    /// Whether a custom stream has a search in flight that hasn't settled yet. While true, nothing
+    /// external to the search (a UI refresh tick, an unrelated property read) should be told "here is
+    /// the current position", because isn't one yet, only the demuxer's read-ahead point.
+    /// </summary>
+    public static bool HasUnsettledCustomSearch(this Demuxer demuxer) =>
+        demuxer.CustomIOContext.stream is ICustomVideoStream stream && !stream.SearchCompleted;
+
     public static bool IsSearchCompleted(this Demuxer demuxer, AVFrame* frame, double timeBase, LogHandler? Log = null)
     {
         if (demuxer.CustomIOContext.stream is not ICustomVideoStream stream || !stream.IsPlayStopMode)
@@ -148,6 +168,12 @@ public unsafe static class DemuxerExtensions
     {
         if (demuxer.CustomIOContext.stream is ICustomVideoStream custom)
             custom.PictureGroupFrameIndex = frameIndex;
+    }
+    public static void UpdateCustomRenderedTimestamp(this Demuxer demuxer, long frameTicks)
+    {
+        if (demuxer.CustomIOContext.stream is not ICustomVideoStream stream)
+            return;
+        stream.CurrentTimestamp = demuxer.ToCustomTimestamp(frameTicks / Ticks.InOneMillisecond);
     }
 }
 #nullable disable

@@ -253,7 +253,7 @@ unsafe partial class Player
             elapsedTicks    = (long)(sw.ElapsedTicks * SWFREQ_TO_TICKS);
             elapsedMs       = sw.ElapsedMilliseconds;
 
-            vDistanceMs     = (int) ((startTicks - vFrame.Timestamp) / speed/1000 - elapsedTicks / 10000);
+            vDistanceMs     = (int) ((startTicks - vFrame.Timestamp) / speed/10000 - elapsedTicks / 10000);
             sleepMs         = vDistanceMs - 1;
             if (CanTrace)
             {
@@ -287,9 +287,9 @@ unsafe partial class Player
             if (Renderer.RenderPlay(vFrame, false))
             {
                 Renderer.PresentPlay();
+                UpdateCurTime(vFrame.Timestamp, false);
                 Log.Debug($"[reverse] frame presented, ts {vFrame.Timestamp} ");
             }
-            UpdateCurTime(vFrame.Timestamp, VideoDemuxer.IsCustomStream() ? true : false);
 
             vFrame = null;
             int dequeueRetries  = MAX_DEQUEUE_RETRIES;

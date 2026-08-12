@@ -1235,7 +1235,7 @@ public unsafe class Demuxer : RunThreadBase
                     if (this.IsCustomStream() && ret == AVERROR_EXIT)
                     {
                         Status = Status.Stopping;
-                        
+
                         if (CustomIOContext.stream is ICustomVideoStream stream)
                             stream.ErrorByStreamingDetected(StreamingErrorCode.DemuxerError);
                         else
@@ -1477,15 +1477,14 @@ public unsafe class Demuxer : RunThreadBase
 
                     if ((packet->flags & PktFlags.Key) != 0)
                     {
-                        gopStartTime = this.PictureGroupTime(VideoTimeUnit.Microseconds);
+                        gopStartTime = this.PictureGroupTime(VideoTimeUnit.Ticks);
                         Log.Trace($"new gop started, ts {gopStartTime}, time {TicksToTime(gopStartTime *10)}, packets {curReverseVideoPackets.Count}, stack {curReverseVideoStack.Count}, gop queue {VideoPacketsReverse.Count}");
                     }
 
                     var stream = AVStreamToStream[packet->stream_index];
                     var fps = (long)this.CustomFramePerSecond();
                     long frameDuration = 1_000_000 / fps;
-                    long frameTime = this.CurCustomTime(VideoTimeUnit.Microseconds);
-                    double spoolSpeed = CustomIOContext.stream.GetSpoolSpeed();
+                    long frameTime = this.CurCustomTime(VideoTimeUnit.Ticks);
 
                     packet->pts = (long)(frameTime / stream.Timebase);
                     packet->duration = frameDuration;
@@ -1548,7 +1547,7 @@ public unsafe class Demuxer : RunThreadBase
 
                     curReverseStopRequestedPts = NoTs;
 
-                    if ((packet->flags & PktFlags.Key) == 0 && curReverseVideoPackets.Count > 0)
+                    if (curReverseVideoPackets.Count > 0)
                     {
                         var drainPacket = av_packet_alloc();
                         drainPacket->data = null;

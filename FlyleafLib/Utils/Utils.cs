@@ -17,6 +17,11 @@ public static partial class Utils
     public static readonly Point        PointEmpty          = new();
     public static readonly CornerRadius CornerRadiusEmpty   = new();
 
+    public static Action<Action> UiInvokeAction = action =>
+        Application.Current.Dispatcher.Invoke(action, System.Windows.Threading.DispatcherPriority.DataBind);
+    public static Action<Action> UiBeginInvokeAction = action =>
+        Application.Current.Dispatcher.BeginInvoke(action, System.Windows.Threading.DispatcherPriority.DataBind);
+
 
     // VLC : https://github.com/videolan/vlc/blob/master/modules/gui/qt/dialogs/preferences/simple_preferences.cpp
     // Kodi: https://github.com/xbmc/xbmc/blob/master/xbmc/settings/AdvancedSettings.cpp
@@ -87,14 +92,14 @@ public static partial class Utils
             return;
 #endif
 
-        Application.Current.Dispatcher.BeginInvoke(action, System.Windows.Threading.DispatcherPriority.DataBind);
+        UiBeginInvokeAction(action);
     }
 
     /// <summary>
     /// Invokes the UI thread to execute the specified action
     /// </summary>
     /// <param name="action"></param>
-    public static void UIInvoke(Action action) => Application.Current.Dispatcher.Invoke(action, System.Windows.Threading.DispatcherPriority.DataBind);
+    public static void UIInvoke(Action action) => UiInvokeAction(action);
 
     /// <summary>
     /// Invokes the UI thread if required to execute the specified action
@@ -105,7 +110,7 @@ public static partial class Utils
         if (Environment.CurrentManagedThreadId == Application.Current.Dispatcher.Thread.ManagedThreadId)
             action();
         else
-            Application.Current.Dispatcher.Invoke(action, System.Windows.Threading.DispatcherPriority.DataBind);
+            UiInvokeAction(action);
     }
 
     public static Thread STA(Action action)
@@ -480,7 +485,7 @@ public static partial class Utils
         Span<char> buffer = stackalloc char[input.Length];
         input.AsSpan().CopyTo(buffer);
         buffer[0] = char.ToLowerInvariant(buffer[0]);
-    
+
         return new string(buffer);
     }
 
@@ -661,7 +666,7 @@ public static partial class Utils
             }
         };
     }
-        
+
 
     public static readonly double SWFREQ_TO_TICKS = 10000000.0 / Stopwatch.Frequency;
     public static string ToHexadecimal(byte[] bytes)
@@ -734,7 +739,7 @@ public static partial class Utils
 
         if (dump == "")
             return "";
-        
+
         return $"\t[Metadata] {dump}";
     }
     public static string TicksToTime(long ticks)
@@ -796,7 +801,7 @@ public static partial class Utils
             else
                 return ts.ToString(@"d\-hh\:mm\:ss\.fff");
         }
-        
+
         if (ts.TotalMinutes > -1)
             return ts.ToString(@"\-ss\.fff");
         else if (ts.TotalHours > -1)
@@ -828,7 +833,7 @@ public static partial class Utils
             return ret;
 
         for (int i = 0; i < values.Count - 1; i++)
-            ret += values[i] + separator; 
+            ret += values[i] + separator;
 
         return ret + values[^1];
     }

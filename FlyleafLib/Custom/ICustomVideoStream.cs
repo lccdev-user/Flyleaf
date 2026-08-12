@@ -23,7 +23,7 @@ public interface ICustomVideoStream
     /// <summary>
     ///
     /// </summary>
-    long CurrentTimestamp { get; }
+    long CurrentTimestamp { get; set; }
     long LastTimestamp { get; }
     /// <summary>
     /// The first timestamp (in milliseconds) worth presenting, or 0 to present everything decoded.
@@ -50,6 +50,6 @@ public interface ICustomVideoStream
     int Mode { get; set; }
     double SpoolSpeed { get; set; }
     void Play(long timestamp, int playMode, double spoolSpeed);
-    void ErrorByStreamingDetected(StreamingErrorCode errorCode); 
+    void ErrorByStreamingDetected(StreamingErrorCode errorCode);
 }
 #nullable disable
