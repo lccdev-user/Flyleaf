@@ -1354,11 +1354,9 @@ public unsafe class Demuxer : RunThreadBase
             Log.Debug("RunInternalReverse: Start");
         do
         {
-            Log.Debug("DEMUXER running inner RunInternalReverse loop");
             // Wait until not QueueFull
             if (VideoPacketsReverse.Count > maxQueueSize)
             {
-                Log.Debug("DEMUXER waiting until not QueueFull");
                 lock (lockStatus)
                     if (Status == Status.Running) Status = Status.QueueFull;
 
@@ -1382,12 +1380,10 @@ public unsafe class Demuxer : RunThreadBase
             // Demux Packet
             lock (lockFmtCtx)
             {
-                Log.Debug("DEMUXER trying to demux packet");
                 Interrupter.ReadRequest();
                 ret = av_read_frame(fmtCtx, packet);
                 if (Interrupter.ForceInterrupt != 0)
                 {
-                    Log.Debug("DEMUXER force interrupt");
                     av_packet_unref(packet); gotAVERROR_EXIT = true;
                     continue;
                 }
@@ -1395,7 +1391,6 @@ public unsafe class Demuxer : RunThreadBase
                 // Possible check if interrupt/timeout and we dont seek to reset the backend pb->pos = 0?
                 if (ret != 0)
                 {
-                    Log.Debug("DEMUXER interrupt or timeout");
                     av_packet_unref(packet);
 
                     if (ret == AVERROR_EOF)
@@ -1473,7 +1468,6 @@ public unsafe class Demuxer : RunThreadBase
 
                 if (this.IsCustomStream())
                 {
-                    Log.Debug("DEMUXER entering IsCustomStream block");
                     if ((packet->flags & PktFlags.Key) == 0 && curReverseStartPts == NoTs)
                     {
                         Log.Warn($"packet belong to not completed gop, size {packet->size}");
@@ -1502,7 +1496,6 @@ public unsafe class Demuxer : RunThreadBase
 
                 if ((packet->flags & PktFlags.Key) != 0)
                 {
-                    Log.Debug("DEMUXER entering PktFlags.Key block");
                     Log.Trace($"[key-frame] " + $"packet->pts {packet->pts}, " +
                         $"curReverseStartPts {(curReverseStartPts == AV_NOPTS_VALUE ? "-" : curReverseStartPts)}, " +
                         $"curReverseStopPts {(curReverseStopPts == AV_NOPTS_VALUE ? "-" : curReverseStopPts)}, " +
@@ -1556,7 +1549,6 @@ public unsafe class Demuxer : RunThreadBase
 
                     if (curReverseVideoPackets.Count > 0)
                     {
-                        Log.Debug("DEMUXER draining packets");
                         var drainPacket = av_packet_alloc();
                         drainPacket->data = null;
                         drainPacket->size = 0;
