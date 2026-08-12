@@ -1548,7 +1548,7 @@ public unsafe class Demuxer : RunThreadBase
 
                     curReverseStopRequestedPts = NoTs;
 
-                    if ((packet->flags & PktFlags.Key) == 0 && curReverseVideoPackets.Count > 0)
+                    if (curReverseVideoPackets.Count > 0)
                     {
                         var drainPacket = av_packet_alloc();
                         drainPacket->data = null;
