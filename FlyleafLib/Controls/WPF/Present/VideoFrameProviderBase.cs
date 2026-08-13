@@ -93,8 +93,14 @@ public abstract unsafe class VideoFrameProviderBase : IVideoFrameProvider
         DebugLogger.Print($"[FLB] SetCompositorDevice crossAdapter={_crossAdapter}");
     }
 
+    // Always read back to CPU and upload on the consumer device. The same-adapter "zero-copy" shared
+    // texture path (MiscFlags.Shared, no keyed mutex) had no cross-device synchronization: the compositor
+    // device could CopyResource from the shared texture before the render device's write was visible,
+    // presenting the *previous* frame (visible as stale frames when seeking). The CPU readback's Map
+    // forces a full GPU sync, so it is race-free; the copy is control-sized and measured negligible.
+    // Zero-copy would require a keyed mutex / shared fence handshake on both devices.
     private void Recompute()
-        => _needsReadback = _presentKind == PresentKind.Software || (_presentKind == PresentKind.Hardware && _crossAdapter);
+        => _needsReadback = true;
 
     private bool DetectCrossAdapter(ID3D11Device device)
     {
