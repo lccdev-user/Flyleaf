@@ -7,16 +7,17 @@ using FlyleafLib.MediaFramework.MediaRenderer;
 using FlyleafLib.MediaFramework.MediaStream;
 using FlyleafLib.MediaPlayer;
 using FlyleafLib.Custom;
+using System.Linq;
 
 namespace FlyleafLib.MediaFramework.MediaDecoder;
 
 /* TBR
  * Missing locks (e.g. GetFrameNext) / Missing checks after locks (e.g. disposed) / Mixing locks (actions/demuxer/codecCtx/renderer)
  *  Currently no issues as we use locks at higher level
- *  
+ *
  * GetFrameNumberX: Still issues mainly with Prev, e.g. jumps from 279 to 281 frame | VFR / Timebase / FrameDuration / FPS inaccuracy
  *  Should use just GetFramePrev/Next and work with pts (but we currenlty work with Player.CurTime)
- *  
+ *
  * Open/Open2: Merge and review quick Setup/Full Dispose
  */
 
@@ -472,7 +473,7 @@ public unsafe class VideoDecoder : DecoderBase
                         break; // else EOF
                     }
                 }
-                
+
                 packet = vPackets.Dequeue();
 
                 if (packet == null)
@@ -522,7 +523,7 @@ public unsafe class VideoDecoder : DecoderBase
          * - Key Packet / Frame Validations
          * - Software Fallback
          * - Global Errors Counter
-         * 
+         *
          * Returns
          *  0       : Call RecvAVFrame  (Success | HasMoreOutput)   * Ideally we should not dipose packet when more output (but should not happen with current design)
          *  EAGAIN  : Call SendAVPacket (Ignored)                   * Invalid Packet, send next one
@@ -537,7 +538,7 @@ public unsafe class VideoDecoder : DecoderBase
                 if (CanDebug) Log.Debug("Ignoring non-key packet");
                 av_packet_free(&packet);
                 return AVERROR_EAGAIN;
-                
+
             }
 
             keyFrameRequired  = checkKeyFrame && packet->pts != startPts;
@@ -584,7 +585,7 @@ public unsafe class VideoDecoder : DecoderBase
          * - Fill Stream From Codec
          * - Skip Frames
          * - Global Errors Counter
-         * 
+         *
          * Returns
          *  0       : Call RecvAVFrame  (Success)           * Try for more output
          *  EAGAIN  : Call SendAVPacket (NeedsMoreInput)    * Invalid Packet, send next one
@@ -623,7 +624,7 @@ public unsafe class VideoDecoder : DecoderBase
                 av_frame_unref(frame);
                 return RecvAVFrame();
             }
-            
+
             keyFrameRequired = false;
         }
 
@@ -895,10 +896,10 @@ public unsafe class VideoDecoder : DecoderBase
                             break;
                     }
 
-                    packet = (AVPacket*)curReverseVideoPackets[curReversePacketPos++];
-                    ret = avcodec_send_packet(codecCtx, packet);
+                    var couldFindPacket = TryGetNextReversePacket(out nint packetPtr);
+                    packet = (AVPacket*)packetPtr;
 
-                    if (ret != 0 && ret != AVERROR(EAGAIN))
+                    if ((ret != 0 && ret != AVERROR(EAGAIN)) || !couldFindPacket)
                     {
                         if (ret == AVERROR_EOF) { Status = Status.Ended; break; }
 
@@ -907,12 +908,15 @@ public unsafe class VideoDecoder : DecoderBase
                         allowedErrors--;
                         if (allowedErrors == 0) { Log.Error("Too many errors!"); Status = Status.Stopping; break; }
 
-                        for (int i = curReverseVideoPackets.Count - 1; i >= curReversePacketPos - 1; i--)
+                        if (couldFindPacket)
                         {
-                            packet = (AVPacket*)curReverseVideoPackets[i];
-                            av_packet_free(&packet);
-                            curReverseVideoPackets[curReversePacketPos - 1] = 0;
-                            curReverseVideoPackets.RemoveAt(i);
+                            for (int i = curReverseVideoPackets.Count - 1; i >= curReversePacketPos - 1; i--)
+                            {
+                                packet = (AVPacket*)curReverseVideoPackets[i];
+                                av_packet_free(&packet);
+                                curReverseVideoPackets[curReversePacketPos - 1] = 0;
+                                curReverseVideoPackets.RemoveAt(i);
+                            }
                         }
 
                         avcodec_flush_buffers(codecCtx);
@@ -1053,7 +1057,7 @@ public unsafe class VideoDecoder : DecoderBase
 
             if (ret < 0)
                 ret = av_seek_frame(demuxer.FormatContext, -1, Math.Max((curSeekMcs - (long)TimeSpan.FromSeconds(1).TotalMicroseconds) - curFixSeekDelta, demuxer.StartTime / 10), SeekFlags.Frame);
-            
+
             demuxer.DisposePackets();
 
             if (demuxer.Status == Status.Ended)
@@ -1069,7 +1073,7 @@ public unsafe class VideoDecoder : DecoderBase
                 return null;
 
             curFrameNumber = GetFrameNumber2((long)(frame->pts * VideoStream.Timebase));
-            
+
             if (curFrameNumber > frameNumber)
             {
                 curFixSeekDelta += FIX_SEEK_DELTA_MCS;
@@ -1245,6 +1249,21 @@ public unsafe class VideoDecoder : DecoderBase
         return 0;
     }
 
+    private bool TryGetNextReversePacket(out nint packet)
+    {
+        packet = 0;
+        var foundPacket = curReverseVideoPackets.ElementAtOrDefault(curReversePacketPos++);
+        var couldFindPacket = foundPacket != 0;
+        if (couldFindPacket)
+        {
+            packet = foundPacket;
+        }
+        else
+            Log.Error("DECODER: Could not find packets");
+
+        return couldFindPacket;
+    }
+
     #region Dispose
     // TODO: try to handle all from renderer* (requires reverse to embed in Frames)
     public void DisposeFrames()
@@ -1274,10 +1293,13 @@ public unsafe class VideoDecoder : DecoderBase
 
         curReverseVideoPackets.Clear();
 
-        for (int i = 0; i < curReverseVideoFrames.Count; i++)
-            curReverseVideoFrames[i].Dispose();
+        lock (lockCodecCtx)
+        {
+            for (int i = 0; i < curReverseVideoFrames.Count; i++)
+                curReverseVideoFrames[i].Dispose();
 
-        curReverseVideoFrames.Clear();
+            curReverseVideoFrames.Clear();
+        }
     }
     protected override void DisposeInternal()
     {   // Called by Dispose (lockActions) | TBR: lock (lockCodecCtx)?
