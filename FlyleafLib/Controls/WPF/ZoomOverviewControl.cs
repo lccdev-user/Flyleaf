@@ -94,7 +94,7 @@ public sealed class ZoomOverviewControl : FrameworkElement, IDisposable
         _provider.Renderer.ShowZoomBox = ShowZoomBox;
         _provider.Renderer.VideoViewSizeChanged = RecalcVideoSize;
 
-        _presenter = new HybridVideoPresenter(HybridVideoPresenter.DefaultMode);
+        _presenter = new HybridVideoPresenter(Engine.Config.VideoPresentMode);
         AddVisualChild(_presenter);
         InvalidateMeasure();
         _presenter.Attach(_provider);
