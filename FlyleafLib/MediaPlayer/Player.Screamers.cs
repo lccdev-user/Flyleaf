@@ -106,7 +106,7 @@ unsafe partial class Player
             return;
 
         UpdateCurTime(aFrame.Timestamp, false);
-        
+
         while(seeks.IsEmpty && decoder.AudioStream.Demuxer.BufferedDuration < Config.Player.MinBufferDuration && AudioDecoder.Frames.Count < Config.Decoder.MaxAudioFrames / 2 && IsPlaying && decoder.AudioStream.Demuxer.IsRunning && decoder.AudioStream.Demuxer.Status != MediaFramework.Status.QueueFull)
             Thread.Sleep(20);
     }
