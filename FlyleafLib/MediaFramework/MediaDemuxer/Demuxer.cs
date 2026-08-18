@@ -1652,10 +1652,9 @@ public unsafe class Demuxer : RunThreadBase
         {
             if (CustomIOContext.stream is ICustomVideoStream custom)
             {
-                long frameTime = (custom.CurrentTimestamp - custom.StartTimestamp) * Microseconds.InOneMillisecond;
-                var stream = AVStreamToStream[packet->stream_index];
-                curReverseStopRequestedPts = (long)((frameTime + Milliseconds.InOneSecond) / stream.Timebase);
-                Log.Debug($"EnableReversePlayback(timestamp {timestamp}: curReverseStopRequestedPts {curReverseStopRequestedPts}, frame time {frameTime})");
+                long frameTime = (custom.TargetTimestamp - custom.StartTimestamp) * Ticks.InOneMillisecond;
+                curReverseStopRequestedPts = (long)((frameTime + Ticks.InOneMillisecond) / VideoStream.Timebase);
+                Log.Debug($"EnableReversePlayback(timestamp {timestamp}: curReverseStopRequestedPts {curReverseStopRequestedPts}, frame time {frameTime}, timebase {VideoStream.Timebase})");
             }
         }
     }

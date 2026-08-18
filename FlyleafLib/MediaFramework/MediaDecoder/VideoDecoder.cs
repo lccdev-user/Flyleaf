@@ -898,6 +898,8 @@ public unsafe class VideoDecoder : DecoderBase
 
                     var couldFindPacket = TryGetNextReversePacket(out nint packetPtr);
                     packet = (AVPacket*)packetPtr;
+                    if (couldFindPacket)
+                        ret = avcodec_send_packet(codecCtx, packet);
 
                     if ((ret != 0 && ret != AVERROR(EAGAIN)) || !couldFindPacket)
                     {
