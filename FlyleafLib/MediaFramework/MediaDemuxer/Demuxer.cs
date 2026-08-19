@@ -263,6 +263,16 @@ public unsafe class Demuxer : RunThreadBase
                 av_packet_free(&packet);
             }
         }
+
+        // A GOP still being accumulated when playback is interrupted (e.g. Pause) leaves packets
+        // here uncleared, and the next RunInternalReverse run mistakes them for its own.
+        for (int i = 0; i < curReverseVideoPackets.Count; i++)
+        {
+            if (curReverseVideoPackets[i] == 0) continue;
+            AVPacket* packet = (AVPacket*)curReverseVideoPackets[i];
+            av_packet_free(&packet);
+        }
+        curReverseVideoPackets = [];
     }
     public void Dispose()
     {
