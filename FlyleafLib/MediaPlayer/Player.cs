@@ -215,7 +215,9 @@ public unsafe partial class Player : NotifyPropertyChanged, IDisposable
     // and raising here would tell a subscriber "here is the current position" using the demuxer's read-ahead point, not a real one.
     internal void SetCurTime()
     {
-        if (VideoDemuxer.HasUnsettledCustomSearch())
+        // Also skipped mid-open: Reset() zeroes curTime before anything's ready, and the periodic
+        // UI refresh tick can catch that. status leaves Opening right after decoder.Open() returns.
+        if (VideoDemuxer.HasUnsettledCustomSearch() || status == Status.Opening)
             return;
 
         Set(ref _CurTime, curTime, true, nameof(CurTime));

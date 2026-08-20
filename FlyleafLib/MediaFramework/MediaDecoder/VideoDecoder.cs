@@ -948,6 +948,11 @@ public unsafe class VideoDecoder : DecoderBase
                         {
                             av_packet_free(&packet);
                             curReverseVideoPackets[curReversePacketPos - 1] = 0;
+
+                            // Same renderer setup RecvAVFrame does, needed if reverse starts cold.
+                            if (!filledFromCodec)
+                                FillFromCodec(frame);
+
                             var mFrame = FillAVFrame();
                             if (mFrame != null)
                                 curReverseVideoFrames.Add(mFrame);

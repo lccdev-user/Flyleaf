@@ -246,7 +246,7 @@ unsafe partial class Player
                 retries = 10;
                 startTicks = vFrame.Timestamp;
 
-                // The first frame of a fresh reverse session, so don't skip refresh type via flag
+                // Always report the first frame, even if PerFrameSecond would otherwise suppress it.
                 UpdateCurTime(vFrame.Timestamp);
                 Renderer.RenderIdleStop();
                 sw.Restart();
