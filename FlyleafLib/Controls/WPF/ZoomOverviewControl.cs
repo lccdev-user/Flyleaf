@@ -208,7 +208,7 @@ public sealed class ZoomOverviewControl : FrameworkElement, IDisposable
         _player.Config.Video.PanYOffset = -panY;
     }
 
-    private void RecalcVideoSize()
+    private void RecalcVideoSize() => UIInvokeIfRequired(() =>
     {
         var renderer = _provider?.Renderer;
         if (renderer is null || !renderer.IsInitialized)
@@ -222,7 +222,7 @@ public sealed class ZoomOverviewControl : FrameworkElement, IDisposable
             SetValue(VideoHeightPropertyKey, (int)renderer.Viewport.Height);
         }
         catch { }
-    }
+    });
 
     private (int Width, int Height) GetPixelSize()
     {
