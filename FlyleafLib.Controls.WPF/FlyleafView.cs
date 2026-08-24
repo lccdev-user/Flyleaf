@@ -1,6 +1,7 @@
 using FlyleafLib.Controls.WPF.Present;
 using FlyleafLib.MediaPlayer;
 using System;
+using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -174,6 +175,7 @@ public class FlyleafView : Decorator, IHostPlayer, IDisposable
     {
         if (oldPlayer != null)
         {
+            oldPlayer.PropertyChanged -= OnPlayerStopped;
             DisposeBridge();
             oldPlayer.Host = null;
         }
@@ -185,8 +187,15 @@ public class FlyleafView : Decorator, IHostPlayer, IDisposable
         if (Player == null)
             return;
 
+        Player.PropertyChanged += OnPlayerStopped;
         Player.Host = this;
         EnsureBridge();
+    }
+
+    private void OnPlayerStopped(object sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(Player.Status) && Player.Status is Status.Stopped)
+            _presenter?.Clear();
     }
 
     private VideoPresentMode ResolveMode() => Engine.Config.VideoPresentMode;

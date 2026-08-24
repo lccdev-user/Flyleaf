@@ -11,4 +11,5 @@ internal interface IVideoPresenter : IDisposable
     /// <summary>One render-loop tick; presents the latest frame if one is pending.</summary>
     void Pump();
     void Resize(int pixelWidth, int pixelHeight);
+    void Clear();
 }

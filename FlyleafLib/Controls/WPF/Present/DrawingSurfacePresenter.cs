@@ -52,6 +52,9 @@ internal sealed class DrawingSurfacePresenter : IVideoPresenter
         // is resized by the coordinator. Nothing device-side to do here.
     }
 
+    // todo: implement clear for hardware component if necessary
+    public void Clear() { }
+
     public void Pump()
     {
         if (_provider != null && IsFrontBufferAvailable && _provider.HasPendingFrame)

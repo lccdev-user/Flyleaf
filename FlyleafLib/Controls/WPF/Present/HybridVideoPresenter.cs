@@ -51,6 +51,8 @@ public sealed class HybridVideoPresenter : FrameworkElement, IDisposable
         HookPump();
     }
 
+    public void Clear() => _active?.Clear();
+
     private void SetActive(IVideoPresenter presenter)
     {
         if (_active != null)
