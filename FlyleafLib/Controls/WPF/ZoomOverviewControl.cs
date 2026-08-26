@@ -208,7 +208,7 @@ public sealed class ZoomOverviewControl : FrameworkElement, IDisposable
         _player.Config.Video.PanYOffset = -panY;
     }
 
-    private void RecalcVideoSize() => UIInvokeIfRequired(() =>
+    private void RecalcVideoSize() => UI(() =>
     {
         var renderer = _provider?.Renderer;
         if (renderer is null || !renderer.IsInitialized)
