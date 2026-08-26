@@ -54,6 +54,8 @@ public abstract unsafe class VideoFrameProviderBase : IVideoFrameProvider
     /// <summary>The device the frames are produced on (the player's render adapter).</summary>
     protected abstract ID3D11Device RenderDevice { get; }
 
+    protected virtual void OnFrameInvalidated() { }
+
     protected void SetRenderLuid(long luid) => _renderLuid = luid;
 
     protected void SetControlSize(int width, int height)
@@ -78,6 +80,7 @@ public abstract unsafe class VideoFrameProviderBase : IVideoFrameProvider
             Recompute();
             DropFrameTexture();
         }
+        OnFrameInvalidated();
         DebugLogger.Print($"[FLB] SetPresentMode {kind} needsReadback={_needsReadback}");
     }
 
@@ -90,6 +93,7 @@ public abstract unsafe class VideoFrameProviderBase : IVideoFrameProvider
             Recompute();
             DropFrameTexture();
         }
+        OnFrameInvalidated();
         DebugLogger.Print($"[FLB] SetCompositorDevice crossAdapter={_crossAdapter}");
     }
 
@@ -247,6 +251,7 @@ public abstract unsafe class VideoFrameProviderBase : IVideoFrameProvider
         }
 
         OnResize(width, height);
+        OnFrameInvalidated();
     }
 
     /// <summary>Subclass hook to resize its frame source (swap-chain / minimap RT).</summary>
