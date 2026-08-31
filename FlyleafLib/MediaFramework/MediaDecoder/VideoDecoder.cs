@@ -320,9 +320,9 @@ public unsafe class VideoDecoder : DecoderBase
         allowedErrors       = Config.Decoder.MaxErrors;
 
         // Not all codecs fill key frame flag | https://github.com/SuRGeoNix/Flyleaf/issues/638 | Old MOV/MP4 container marking packets loosely as key
-        checkKeyFrame       = codecCtx->codec_id != AVCodecID.Av1 &&
+        checkKeyFrame       = !isIntraOnly && codecCtx->codec_id != AVCodecID.Av1 &&
                              (VideoAccelerated ||
-                              codecCtx->codec_id != AVCodecID.Vp8 && codecCtx->codec_id != AVCodecID.Vp9 && codecCtx->codec_id != AVCodecID.Qtrle);
+                              codecCtx->codec_id != AVCodecID.Vp8 && codecCtx->codec_id != AVCodecID.Vp9);
 
         if (CanDebug) Log.Debug($"Using {CurCodecSpec.Name} {(VideoAccelerated ? "(HW)" : "(SW)")}");
 
@@ -494,6 +494,12 @@ public unsafe class VideoDecoder : DecoderBase
                 ret = SendAVPacket(packet);
                 if (ret != 0)
                 {
+                    if (isDraining)
+                    {
+                        Status = Status.Ended;
+                        break;
+                    }
+
                     if (ret == AVERROR_EAGAIN)
                     {   // Fast retry => Legitimate decoding errors | Waiting for key packet
                         while (Status == Status.Running && ret == AVERROR_EAGAIN && (packet = vPackets.Dequeue()) != null)
@@ -538,7 +544,6 @@ public unsafe class VideoDecoder : DecoderBase
                 if (CanDebug) Log.Debug("Ignoring non-key packet");
                 av_packet_free(&packet);
                 return AVERROR_EAGAIN;
-
             }
 
             keyFrameRequired  = checkKeyFrame && packet->pts != startPts;
@@ -648,8 +653,8 @@ public unsafe class VideoDecoder : DecoderBase
             }
 
             // Create timestamps for h264/hevc raw streams (Needs also to handle this with the remuxer / no recording currently supported!)
-            frame->pts = lastFixedPts + VideoStream.StartTimePts;
-            lastFixedPts += av_rescale_q(VideoStream.FrameDuration / 10, Engine.FFmpeg.AV_TIMEBASE_Q, VideoStream.AVStream->time_base);
+            frame->pts      = lastFixedPts + VideoStream.StartTimePts;
+            lastFixedPts   += av_rescale_q(VideoStream.FrameDuration / 10, TIME_BASE_Q, VideoStream.AVStream->time_base);
         }
 
         if (!filledFromCodec) // Ensures we have a proper frame before filling from codec
@@ -1059,12 +1064,13 @@ public unsafe class VideoDecoder : DecoderBase
         {
             demuxer.Pause();
             Pause();
+            if (demuxer.FormatContext->pb != null && demuxer.FormatContext->pb->error == AVERROR_EXIT)
+                demuxer.FormatContext->pb->error = 0;
             demuxer.Interrupter.SeekRequest();
-            int ret = av_seek_frame(demuxer.FormatContext, -1, curSeekMcs - curFixSeekDelta, SeekFlags.Frame | SeekFlags.Backward);
+            int ret = av_seek_frame(demuxer.FormatContext, -1, curSeekMcs - curFixSeekDelta, SeekFlags.Backward);
 
             if (ret < 0)
-                ret = av_seek_frame(demuxer.FormatContext, -1, Math.Max((curSeekMcs - (long)TimeSpan.FromSeconds(1).TotalMicroseconds) - curFixSeekDelta, demuxer.StartTime / 10), SeekFlags.Frame);
-
+                ret = av_seek_frame(demuxer.FormatContext, -1, Math.Max((curSeekMcs - (long)TimeSpan.FromSeconds(1).TotalMicroseconds) - curFixSeekDelta, demuxer.StartTime / 10), SeekFlags.None);
             demuxer.DisposePackets();
 
             if (demuxer.Status == Status.Ended)
@@ -1125,6 +1131,14 @@ public unsafe class VideoDecoder : DecoderBase
         }
 
         return null;
+    }
+
+    public VideoFrame GetFrameNext2()
+    {
+        demuxer.Pause();
+        Pause();
+
+        return GetFrameNext();
     }
 
     /// <summary>
@@ -1239,8 +1253,8 @@ public unsafe class VideoDecoder : DecoderBase
                 return DecodeFrameNextInternal();
             }
 
-            frame->pts = lastFixedPts + VideoStream.StartTimePts;
-            lastFixedPts += av_rescale_q(VideoStream.FrameDuration / 10, Engine.FFmpeg.AV_TIMEBASE_Q, VideoStream.AVStream->time_base);
+            frame->pts      = lastFixedPts + VideoStream.StartTimePts;
+            lastFixedPts   += av_rescale_q(VideoStream.FrameDuration / 10, TIME_BASE_Q, VideoStream.AVStream->time_base);
         }
 
         if (StartTime == NoTs)

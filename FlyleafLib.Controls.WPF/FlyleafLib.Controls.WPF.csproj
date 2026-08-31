@@ -4,10 +4,9 @@
     <TargetFrameworks>net8.0-windows;net10.0-windows</TargetFrameworks>
 	<UseWindowsForms>true</UseWindowsForms>
     <UseWPF>true</UseWPF>
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <Version>1.6.4</Version>
+    <Version>1.7.3</Version>
     <Authors>SuRGeoNix</Authors>
-    <Copyright>SuRGeoNix © 2025</Copyright>
+    <Copyright>SuRGeoNix © 2026</Copyright>
     <PackageLicenseExpression>LGPL-3.0-or-later</PackageLicenseExpression>
     <PackageProjectUrl>https://github.com/SuRGeoNix/Flyleaf</PackageProjectUrl>
     <PackageIcon>Flyleaf.png</PackageIcon>
@@ -29,9 +28,8 @@
 
   <ItemGroup>
     <PackageReference Include="Dragablz" Version="0.0.3.234" />
-    <PackageReference Include="MaterialDesignThemes" Version="5.3.1-ci1146" />
-    <PackageReference Include="Vortice.Direct3D9" Version="3.8.3" />
-    <PackageReference Include="WpfColorFontDialog" Version="1.0.8" />
+    <PackageReference Include="MaterialDesignThemes" Version="5.3.3-ci1443" />
+    <PackageReference Include="WpfColorFontDialog" Version="1.0.9" />
   </ItemGroup>
 
   <ItemGroup>
