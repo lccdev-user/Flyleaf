@@ -24,6 +24,7 @@ internal sealed class WriteableBitmapPresenter : IVideoPresenter
     public void Attach(IVideoFrameProvider provider) => _provider = provider;
 
     public void Resize(int pixelWidth, int pixelHeight) => EnsureBitmap(pixelWidth, pixelHeight);
+    public void Clear() => _bitmap?.Clear();
 
     public void Pump()
     {

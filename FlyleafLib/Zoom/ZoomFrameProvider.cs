@@ -63,4 +63,6 @@ public sealed class ZoomFrameProvider : VideoFrameProviderBase
             _renderer = null;
         }
     }
+
+    protected override void OnFrameInvalidated() => OnFrameReady();
 }
