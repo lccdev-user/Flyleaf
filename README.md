@@ -1,4 +1,4 @@
-﻿# *Flyleaf v3.10*: Media Player .NET Library for WinUI 3/WPF/WinForms (based on FFmpeg/DirectX)
+﻿# *Flyleaf v3.11*: Media Player .NET Library for WinUI 3/WPF/WinForms (based on FFmpeg/DirectX)
 
 ![alt text](Images/Flyleafv3.6.png)
 
@@ -31,14 +31,14 @@
 
 ### **FFmpeg**
 - *HLS Live Seeking <sub>Might the 1st FFmpeg player which does that</sub>*
-- *Pached for [HLS](https://patchwork.ffmpeg.org/project/ffmpeg/list/?series=1018) and [.NET](https://developercommunity.microsoft.com/t/Proper-handling-of-MS_VC_EXCEPTION-0x40/10961029) issues <sub>Use recommended FFmpeg libraries which can be found on GitHub releases</sub>*
+- *Pached for [.NET](https://developercommunity.microsoft.com/t/Proper-handling-of-MS_VC_EXCEPTION-0x40/10961029) issues <sub>Use recommended FFmpeg libraries which can be found on GitHub releases</sub>*
 - *Capture Devices <sub>Pass the format, input and options with a single Url eg. fmt://gdigrab?desktop&framerate=30</sub>*
-- *Supports FFmpeg v7.1 and v8.0 <sub>(use Flyleaf.FFmpeg.Bindings v8 at your project)</sub>*
+- *Supports FFmpeg v9.0 <sub>(use updated Flyleaf.FFmpeg.Bindings at your project if required)</sub>*
 
 ### **Playback**
 - *Open / Play / Pause / Stop*
 - *Speed / Reverse / Zero-Low Latency*
-- *Seek Backward / Forward <sub>(Short / Large Step)</sub>*
+- *Seek Backward / Forward <sub>(Short / Medium / Large Step)</sub>*
 - *Seek to Time / Seek to Frame / Seek to Chapter / Frame Stepping*
 
 ### **Video**
@@ -50,6 +50,7 @@
 - *Pan Move / Zoom / Rotate / HFlip-VFlip / Cropping <sub>~~(Replica Renderer/Interactive Zoom)~~</sub>*
 - *Record / Snapshot*
 - *Super Resolution <sub>(Nvidia / Intel - D3D11VP only)</sub>*
+- *360° Panoramic*
 - *Video Acceleration*
 - *Video Filters <sub>(Brightness / Contrast / Hue / Saturation)</sub>*
 - *Video Processors <sub>(FlyleafVP / D3D11VP)</sub>*
@@ -62,6 +63,7 @@
 - *Device Preference*
 - *Add / Remove Delay <sub>(Short / Large Step)</sub>*
 - *Volume <sub>(Up / Down / Mute)</sub>*
+- *Native Audio Formats <sub>(Sample Formats / Sample Rates / Channel Layouts)</sub>*
 - *Languages support <sub>System's default languages as priorities for audio streams</sub>*
 
 ### **Subtitles**
@@ -105,7 +107,7 @@
 *Flyleaf wouldn't exist without them!*
 
 * *For the Core*
-  * ***[FFmpeg](http://ffmpeg.org/)*** / ***[FFmpeg.AutoGen](https://github.com/Ruslan-B/FFmpeg.AutoGen/)*** / ***[Flyleaf.FFmpeg.Bindings](https://github.com/SuRGeoNix/Flyleaf.FFmpeg.Generator)***
+  * ***[FFmpeg](http://ffmpeg.org/)*** / ***[Flyleaf.FFmpeg.Bindings](https://github.com/SuRGeoNix/Flyleaf.FFmpeg.Generator)***
   * ***[Vortice](https://github.com/amerkoleci/Vortice.Windows)***
   * *Major open source media players* ***[VLC](https://github.com/videolan/vlc)***, ***[Kodi](https://github.com/xbmc/xbmc)***, ***[MPV](https://github.com/mpv-player/mpv)***, ***[MPC-BE](https://github.com/Aleksoid1978/MPC-BE)***, ***[FFplay](https://github.com/FFmpeg/FFmpeg/blob/master/fftools/ffplay.c)***
 

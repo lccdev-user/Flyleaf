@@ -174,7 +174,7 @@ public unsafe partial class DecoderContext : PluginHandler
             {
                 AudioDecoder.Flush();
                 if (ms == 0)
-                    AudioDecoder.nextPts = AudioDecoder.Stream.StartTimePts;
+                    AudioDecoder.expectingPts = AudioDecoder.Stream.StartTimePts;
             }
 
             if (SubtitlesStream != null && SubtitlesDecoder.OnVideoDemuxer)
@@ -298,25 +298,48 @@ public unsafe partial class DecoderContext : PluginHandler
     public long GetCurTime()    => !VideoDemuxer.Disposed ? VideoDemuxer.CurTime : !AudioDemuxer.Disposed ? AudioDemuxer.CurTime : 0;
     public int GetCurTimeMs()   => !VideoDemuxer.Disposed ? (int)(VideoDemuxer.CurTime / 10000) : (!AudioDemuxer.Disposed ? (int)(AudioDemuxer.CurTime / 10000) : 0);
 
-    private long CalcSeekTimestamp(Demuxer demuxer, long ms, ref bool forward)
+    long CalcSeekTimestamp(Demuxer demuxer, long ms, ref bool forward)
     {
-        long startTime = demuxer.hlsCtx == null ? demuxer.StartTime : demuxer.hlsCtx->first_timestamp * 10;
+        long startTime;
+        long ticks = (ms * 10000);
+
+        if (demuxer.hlsCtx == null)
+        {
+            startTime = demuxer.StartTime;
+            ticks += startTime;
+        }
+        else
+        {
+            startTime = demuxer.hlsCtx->first_timestamp * 10;
+
+            // Live External Demuxers will use video timestamps directly*
+            if (demuxer.Type == MediaType.Video || VideoDemuxer.Disposed)
+                ticks += startTime;
+        }
         if (demuxer.IsCustomStream())
-            startTime = demuxer.StartCustomTimestamp(VideoTimeUnit.Ticks);        
-        long ticks = (ms * 10000) + startTime;
+        {
+            startTime = demuxer.StartCustomTimestamp(VideoTimeUnit.Ticks);
+            ticks += startTime;
+        }
 
         if (demuxer.Type == MediaType.Audio) ticks -= Config.Audio.Delay;
         if (demuxer.Type == MediaType.Subs ) ticks -= Config.Subtitles.Delay + (2 * 1000 * 10000); // We even want the previous subtitles
 
         if (ticks < startTime)
         {
-            ticks = startTime;
             forward = true;
+            return startTime;
         }
-        else if (ticks > startTime + (!VideoDemuxer.Disposed ? VideoDemuxer.Duration : AudioDemuxer.Duration) - (50 * 10000) && demuxer.Duration > 0) // demuxer.Duration > 0 (allow blindly when duration 0)
+
+        // Don't limit "end" seek for live streams (duration=0)
+        if (demuxer.Duration > 0)
         {
-            ticks = Math.Max(startTime, startTime + demuxer.Duration - (50 * 10000));
-            forward = false;
+            var duration = (!VideoDemuxer.Disposed ? VideoDemuxer.Duration : AudioDemuxer.Duration) - (50 * 10000);
+            if (ticks > startTime + duration)
+            {
+                forward = false;
+                return Math.Max(startTime, startTime + demuxer.Duration - (50 * 10000));
+            }
         }
 
         return ticks;
@@ -497,6 +520,7 @@ public unsafe partial class DecoderContext : PluginHandler
         int allowedErrors = Config.Decoder.MaxErrors;
         double timeBase = 0;
         int gopFrameIndex = 0;
+        bool needsDrain = false;
         AVPacket* packet;
         Log.Debug($"GetVideoFrame( ts {timestamp})");
         lock (VideoDemuxer.lockFmtCtx)
@@ -511,6 +535,31 @@ public unsafe partial class DecoderContext : PluginHandler
                 if (ret != 0)
                 {
                     av_packet_free(&packet);
+
+                    if (needsDrain)
+                    {
+                        ret = avcodec_send_packet(VideoDecoder.CodecCtx, null);
+                        if (ret != 0)
+                            return;
+
+                        while (VideoDemuxer.VideoStream != null && !Interrupt)
+                        {
+                            ret = VideoDecoder.RecvAVFrame();
+                            if (ret != 0)
+                                return;
+
+                            if (timestamp != -1 && !VideoDemuxer.IsLive && (long)(VideoDecoder.frame->pts * VideoStream.Timebase) - VideoDemuxer.StartTime + (VideoStream.FrameDuration / 2) < timestamp)
+                            {
+                                av_frame_unref(VideoDecoder.frame);
+                                continue;
+                            }
+
+                            ret = VideoDecoder.FillEnqueueAVFrame();
+                            if (ret == 0 || ret == -1234)
+                                return;
+                        }
+                    }
+
                     return;
                 }
             }
@@ -528,7 +577,7 @@ public unsafe partial class DecoderContext : PluginHandler
             }
 
             VideoDemuxer.SetPacketPts(packet, out timeBase, ref gopFrameIndex, Log);
-            
+
             var codecType = VideoDemuxer.FormatContext->streams[packet->stream_index]->codecpar->codec_type;
 
             if (VideoDemuxer.IsHLSLive)
@@ -563,6 +612,7 @@ public unsafe partial class DecoderContext : PluginHandler
                 case AVMediaType.Video:
 
                     ret = VideoDecoder.SendAVPacket(packet);
+                    needsDrain = true;
                     if (ret != 0)
                     {
                         if (ret == AVERROR_EAGAIN)
@@ -570,7 +620,7 @@ public unsafe partial class DecoderContext : PluginHandler
 
                         return; // Critical
                     }
-                   
+
                     while (VideoDemuxer.VideoStream != null && !Interrupt)
                     {
                         ret = VideoDecoder.RecvAVFrame();
@@ -591,7 +641,7 @@ public unsafe partial class DecoderContext : PluginHandler
                                 av_frame_unref(VideoDecoder.frame);
                                 continue;
                             }
-                            else 
+                            else
                                 Log.Debug($"GetVideoFrame: {(long)(VideoDecoder.frame->pts * timeBase)} / {VideoDemuxer.ToCustomTimestamp((long)(VideoDecoder.frame->pts * timeBase) / 10_000)}, " +
                                     $"expected {VideoDemuxer.ExpectedCustomTimestamp(VideoTimeUnit.Milliseconds)}");
                         }
@@ -605,13 +655,8 @@ public unsafe partial class DecoderContext : PluginHandler
                         }
 
                         ret = VideoDecoder.FillEnqueueAVFrame();
-                        if (ret == 0)
-                            return; // Success
-
-                        if (ret == -1234)
-                            return; // Critical
-
-                        continue;
+                        if (ret == 0 || ret == -1234)
+                            return;
                     }
 
                     break; // Switch break

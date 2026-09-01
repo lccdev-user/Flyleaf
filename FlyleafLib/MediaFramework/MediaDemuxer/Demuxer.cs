@@ -893,7 +893,7 @@ public unsafe class Demuxer : RunThreadBase
     }
     string GetDump(string chapters) =>
         $"""
-        [Time	 ] {TicksToTime(StartTime)} / {TicksToTime(Duration)}{(fmtCtx->duration != NoTs ? $" (based on {fmtCtx->duration_estimation_method})" : "")}{(fmtCtx->start_time_realtime != NoTs ? $" [RealTime: {StartRealTime.ToLocalTime()}]" : "")}{(fmtCtx->bit_rate > 0 ? $", {fmtCtx->bit_rate/1000} kb/s" : "")}
+        [Time	 ] {TicksToTime(StartTime)} / {TicksToTime(Duration)}{(fmtCtx->start_time_realtime != NoTs ? $" [RealTime: {StartRealTime.ToLocalTime()}]" : "")}{(fmtCtx->bit_rate > 0 ? $", {fmtCtx->bit_rate/1000} kb/s" : "")}
         [Format  ] {LongName} ({Name}){(fmtCtx->iformat->flags != FmtFlags.None ? $" [Flags: {fmtCtx->iformat->flags}]" : "")}{(fmtCtx->ctx_flags != FmtCtxFlags.None ? $" [CtxFlags: {fmtCtx->ctx_flags}]" : "")}{(fmtCtx->iformat->mime_type != null ? $" [Mime: {BytePtrToStringUTF8(fmtCtx->iformat->mime_type)}]" : "")}{(Extensions != null ? $" [Ext(s): {Extensions}]" : "")}
         """;
     string GetDumpPrograms()
@@ -1043,29 +1043,19 @@ public unsafe class Demuxer : RunThreadBase
             {
                 Interrupter.ForceInterrupt = 0;
 
-                // Flush required because of the interrupt
                 if (fmtCtx->pb != null)
-                {
+                {   // Fix pb after possible interrupt
                     savedPbPos = fmtCtx->pb->pos;
-                    avio_flush(fmtCtx->pb);
-                    fmtCtx->pb->error = 0; // AVERROR_EXIT will stay forever and will cause the demuxer to go in Status Stopped instead of Ended (after interrupted seeks)
                     fmtCtx->pb->eof_reached = 0;
+                    if (fmtCtx->pb->error == AVERROR_EXIT)
+                        fmtCtx->pb->error = 0;
                 }
-                _ = avformat_flush(fmtCtx);
-
-                // Forces seekable HLS
-                if (hlsCtx != null)
-                    fmtCtx->ctx_flags &= ~FmtCtxFlags.Unseekable;
 
                 Interrupter.SeekRequest();
                 if (VideoStream != null)
                 {
                     if (CanDebug) Log.Debug($"[Seek({(forward ? "->" : "<-")})] Requested at {new TimeSpan(ticks)}");
 
-                    // TODO: After proper calculation of Duration
-                    //if (VideoStream.FixTimestamps && Duration > 0)
-                        //ret = av_seek_frame(fmtCtx, -1, (long)((ticks/(double)Duration) * avio_size(fmtCtx->pb)), AVSEEK_FLAG_BYTE);
-                    //else
                     if (CustomIOContext.stream is ICustomVideoStream)
                     {
                         if (!forward)
@@ -1078,8 +1068,8 @@ public unsafe class Demuxer : RunThreadBase
                     }
                     else
                         ret = ticks == StartTime // we should also call this if we seek anywhere within the first Gop
-                        ? avformat_seek_file(fmtCtx, -1, 0, 0, 0, 0)
-                        : av_seek_frame(fmtCtx, -1, ticks / 10, forward ? SeekFlags.Frame : SeekFlags.Backward);
+                            ? avformat_seek_file(fmtCtx, -1, 0, 0, 0, 0)
+                            : av_seek_frame(fmtCtx, -1, ticks / 10, forward ? SeekFlags.None : SeekFlags.Backward);
 
                     curReverseStopPts = NoTs;
                     curReverseStartPts= NoTs;
@@ -1094,11 +1084,10 @@ public unsafe class Demuxer : RunThreadBase
 
                 if (ret < 0)
                 {
-                    if (hlsCtx != null) fmtCtx->ctx_flags &= ~FmtCtxFlags.Unseekable;
                     Log.Info($"Seek failed 1/2 (retrying) {FFmpegEngine.ErrorCodeToMsg(ret)} ({ret})");
 
                     ret = VideoStream != null
-                        ? av_seek_frame(fmtCtx, -1, ticks / 10, forward ? SeekFlags.Backward : SeekFlags.Frame)
+                        ? av_seek_frame(fmtCtx, -1, ticks / 10, forward ? SeekFlags.Backward : SeekFlags.None)
                         : forward ?
                             avformat_seek_file(fmtCtx, -1, long.MinValue, ticks / 10, ticks / 10    , SeekFlags.Any):
                             avformat_seek_file(fmtCtx, -1, ticks / 10   , ticks / 10, long.MaxValue , SeekFlags.Any);
@@ -1107,15 +1096,17 @@ public unsafe class Demuxer : RunThreadBase
                     {
                         Log.Warn($"Seek failed 2/2 {FFmpegEngine.ErrorCodeToMsg(ret)} ({ret})");
 
-                        // Flush required because of seek failure (reset pb to last pos otherwise will be eof) - Mainly for NoTimestamps (TODO: byte seek/calc dur/percentage)
                         if (fmtCtx->pb != null)
-                        {
+                        {   // Fix pb after possible interrupt
+                            if (fmtCtx->pb->error == AVERROR_EXIT)
+                                fmtCtx->pb->error = 0;
+
+                            // TBR: Reset position (from eof?) (Mainly for NoTimestamps)
                             avio_flush(fmtCtx->pb);
-                            fmtCtx->pb->error = 0;
-                            fmtCtx->pb->eof_reached = 0;
-                            avio_seek(fmtCtx->pb, savedPbPos, 0);
+                            if (avio_seek(fmtCtx->pb, savedPbPos, IOSeekFlags.Begin) > 0)
+                                fmtCtx->io_repositioned = 1;
+                            _ = avformat_flush(fmtCtx);
                         }
-                        _ = avformat_flush(fmtCtx);
                     }
                     else
                         lastSeekTime = ticks - StartTime - (hlsCtx != null ? hlsStartTime : (this.IsCustomStream() ? this.StartCustomTimestamp(VideoTimeUnit.Ticks) : 0));
@@ -1359,7 +1350,7 @@ public unsafe class Demuxer : RunThreadBase
 
         // To demux further for buffering (related to BufferDuration)
         int maxQueueSize = 4;
-        curReverseSeekOffset = av_rescale_q(3 * 1000 * 10000 / 10, Engine.FFmpeg.AV_TIMEBASE_Q, VideoStream.AVStream->time_base);
+        curReverseSeekOffset = av_rescale_q(3 * 1000 * 10000 / 10, TIME_BASE_Q, VideoStream.AVStream->time_base);
         if (CanDebug)
             Log.Debug("RunInternalReverse: Start");
         do
@@ -1656,7 +1647,7 @@ public unsafe class Demuxer : RunThreadBase
         if (!this.IsCustomStream())
         {
             Seek(StartTime + timestamp);
-            curReverseStopRequestedPts = av_rescale_q((StartTime + timestamp) / 10, Engine.FFmpeg.AV_TIMEBASE_Q, VideoStream.AVStream->time_base);
+            curReverseStopRequestedPts = av_rescale_q((StartTime + timestamp) / 10, TIME_BASE_Q, VideoStream.AVStream->time_base);
         }
         else
         {
@@ -1669,7 +1660,7 @@ public unsafe class Demuxer : RunThreadBase
         }
     }
     public void DisableReversePlayback() => IsReversePlayback = false;
-    #endregion
+#endregion
 
     #region Switch Programs / Streams
     public bool IsProgramEnabled(StreamBase stream)
@@ -2062,12 +2053,12 @@ public unsafe class PacketQueue : Queue<nint>
     public PacketQueue(Demuxer demuxer) : base()
         => this.demuxer = demuxer;
 
-    #if DEBUG
+#if DEBUG
     // Ensures we don't access base queue directly
     public new void Enqueue     (nint _)    => throw new NotImplementedException("Use AVPacket*");
     public new bool TryDequeue  (out nint _)=> throw new NotImplementedException("Use AVPacket*");
     public new bool TryPeek     (out nint _)=> throw new NotImplementedException("Use AVPacket*");
-    #endif
+#endif
 
     public new void Clear()
     {
