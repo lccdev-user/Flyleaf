@@ -203,10 +203,18 @@ public sealed class ZoomOverviewControl : FrameworkElement, IDisposable
         double v = Math.Clamp(pos.Y / ActualHeight, 0, 1);
         double panX = (u - 0.5) * 2.0;
         double panY = (v - 0.5) * 2.0;
+        var vp = _player.Config.Video;
 
-        _player.Config.Video.PanXOffset = -panX;
-        _player.Config.Video.PanYOffset = -panY;
+        var host = (FrameworkElement)_player.Host;
+        var maxPanX = GetMaxPanOffset(_player.Renderer.Viewport.Width, host.ActualWidth);
+        var maxPanY = GetMaxPanOffset(_player.Renderer.Viewport.Height, host.ActualHeight);
+
+        vp.PanXOffset = Math.Clamp(-panX, -maxPanX, maxPanX);
+        vp.PanYOffset = Math.Clamp(-panY, -maxPanY, maxPanY);
     }
+
+    private double GetMaxPanOffset(double zoomedExtent, double controlExtent) =>
+        Math.Max(0.0, (zoomedExtent / controlExtent) - 1.0) / 2.0;
 
     private void RecalcVideoSize() => UI(() =>
     {
