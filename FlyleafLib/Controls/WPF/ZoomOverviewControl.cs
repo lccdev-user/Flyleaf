@@ -199,15 +199,14 @@ public sealed class ZoomOverviewControl : FrameworkElement, IDisposable
 
     private void PanToPosition(Point pos)
     {
-        double u = Math.Clamp(pos.X / ActualWidth, 0, 1);
-        double v = Math.Clamp(pos.Y / ActualHeight, 0, 1);
-        double panX = (u - 0.5) * 2.0;
-        double panY = (v - 0.5) * 2.0;
         var vp = _player.Config.Video;
-
         var host = (FrameworkElement)_player.Host;
         var maxPanX = GetMaxPanOffset(_player.Renderer.Viewport.Width, host.ActualWidth);
         var maxPanY = GetMaxPanOffset(_player.Renderer.Viewport.Height, host.ActualHeight);
+        double u = Math.Clamp(pos.X / ActualWidth, 0, 1);
+        double v = Math.Clamp(pos.Y / ActualHeight, 0, 1);
+        double panX = (u - 0.5) * 2.0 * maxPanX;
+        double panY = (v - 0.5) * 2.0 * maxPanY;
 
         vp.PanXOffset = Math.Clamp(-panX, -maxPanX, maxPanX);
         vp.PanYOffset = Math.Clamp(-panY, -maxPanY, maxPanY);
