@@ -45,13 +45,10 @@ public unsafe partial class Player
 
     public void ShowFrame()
     {
-        lock(Renderer.Frames)
-        {
-            if (vFrame is not null)
-                Renderer.RenderRequest(vFrame);
-            else
-                Renderer.RenderRequest();
-        }
+        if (vFrame is not null)
+            Renderer.RenderRequest(vFrame);
+        else
+            Renderer.RenderRequest();
     }
 
     public bool ReversePlaybackResync

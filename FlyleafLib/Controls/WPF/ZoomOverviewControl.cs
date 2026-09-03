@@ -243,7 +243,7 @@ public sealed class ZoomOverviewControl : FrameworkElement, IDisposable
         // min and max values are used because a non-standard zoom center can make left and right margins asymmetrical
         var targetX = maxX - u * (maxX - minX);
         var targetY = maxY - v * (maxY - minY);
-        RaiseEvent(new ZoomOverviewPanRequestedEventArgs(PanRequestedEvent, this, targetX, targetY));
+        UI(() => RaiseEvent(new ZoomOverviewPanRequestedEventArgs(PanRequestedEvent, this, targetX, targetY)));
     }
 
     private void RecalcVideoSize() => UI(() =>
