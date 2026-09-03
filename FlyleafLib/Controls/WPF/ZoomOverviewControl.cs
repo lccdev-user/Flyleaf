@@ -1,4 +1,5 @@
 ﻿using FlyleafLib.Controls.WPF.Present;
+using FlyleafLib.Custom;
 using FlyleafLib.MediaPlayer;
 using FlyleafLib.Zoom;
 using System.ComponentModel;
@@ -20,6 +21,12 @@ namespace FlyleafLib.Controls.WPF;
 /// </summary>
 public sealed class ZoomOverviewControl : FrameworkElement, IDisposable
 {
+    public static readonly RoutedEvent PanRequestedEvent = EventManager.RegisterRoutedEvent(
+        name: nameof(PanRequested),
+        routingStrategy: RoutingStrategy.Bubble,
+        handlerType: typeof(ZoomOverviewPanRequestedEventHandler),
+        ownerType: typeof(ZoomOverviewControl));
+
     private static readonly Type playerType = typeof(Player);
     private static readonly Type controlType = typeof(ZoomOverviewControl);
 
@@ -48,6 +55,12 @@ public sealed class ZoomOverviewControl : FrameworkElement, IDisposable
     public static readonly DependencyProperty PlayerProperty =
         DependencyProperty.Register(nameof(Player), playerType, controlType, new(null, OnPlayerChanged));
 
+    public event RoutedEventHandler PanRequested
+    {
+        add => AddHandler(PanRequestedEvent, value);
+        remove => RemoveHandler(PanRequestedEvent, value);
+    }
+
     public Player Player { get => (Player)GetValue(PlayerProperty); set => SetValue(PlayerProperty, value); }
     public bool ShowWhenZoomOut { get => (bool)GetValue(ShowWhenZoomOutProperty); set => SetValue(ShowWhenZoomOutProperty, value); }
     public bool ShowZoomBox { get => (bool)GetValue(ShowZoomBoxProperty); set => SetValue(ShowZoomBoxProperty, value); }
@@ -65,6 +78,10 @@ public sealed class ZoomOverviewControl : FrameworkElement, IDisposable
     private bool _disposed;
     private bool _isDragging;
     private readonly int _uniqueId;
+
+    // Captured once per drag gesture
+    private bool _dragBaselineValid;
+    private double _dragUnzoomedWidth, _dragBaselineX, _dragUnzoomedHeight, _dragBaselineY;
 
     public ZoomOverviewControl()
     {
@@ -180,13 +197,14 @@ public sealed class ZoomOverviewControl : FrameworkElement, IDisposable
             return;
         _isDragging = true;
         CaptureMouse();
+        CaptureDragBaseline();
         PanToPosition(e.GetPosition(this));
         e.Handled = true;
     }
 
     private void OnMouseMove(object sender, MouseEventArgs e)
     {
-        if (!_isDragging || _player == null)
+        if (Mouse.LeftButton != MouseButtonState.Pressed || !_isDragging || _player == null)
             return;
         PanToPosition(e.GetPosition(this));
     }
@@ -197,23 +215,36 @@ public sealed class ZoomOverviewControl : FrameworkElement, IDisposable
         ReleaseMouseCapture();
     }
 
-    private void PanToPosition(Point pos)
+    private void CaptureDragBaseline()
     {
         var vp = _player.Config.Video;
-        var host = (FrameworkElement)_player.Host;
-        var maxPanX = GetMaxPanOffset(_player.Renderer.Viewport.Width, host.ActualWidth);
-        var maxPanY = GetMaxPanOffset(_player.Renderer.Viewport.Height, host.ActualHeight);
-        double u = Math.Clamp(pos.X / ActualWidth, 0, 1);
-        double v = Math.Clamp(pos.Y / ActualHeight, 0, 1);
-        double panX = (u - 0.5) * 2.0 * maxPanX;
-        double panY = (v - 0.5) * 2.0 * maxPanY;
+        var viewport = _player.Renderer.Viewport;
 
-        vp.PanXOffset = Math.Clamp(-panX, -maxPanX, maxPanX);
-        vp.PanYOffset = Math.Clamp(-panY, -maxPanY, maxPanY);
+        // Calculate the baseline viewport dimensions by inverting the zoomed state
+        _dragBaselineValid = viewport.Width > 0 && viewport.Height > 0
+            && PanBoundsCalculator.TryInvertBaseline(viewport.X, viewport.Width, vp.Zoom / 100.0, vp.ZoomCenter.X, vp.PanXOffset, out _dragUnzoomedWidth, out _dragBaselineX)
+            && PanBoundsCalculator.TryInvertBaseline(viewport.Y, viewport.Height, vp.Zoom / 100.0, vp.ZoomCenter.Y, vp.PanYOffset, out _dragUnzoomedHeight, out _dragBaselineY);
     }
 
-    private double GetMaxPanOffset(double zoomedExtent, double controlExtent) =>
-        Math.Max(0.0, (zoomedExtent / controlExtent) - 1.0) / 2.0;
+    private void PanToPosition(Point pos)
+    {
+        if (!_dragBaselineValid)
+            return;
+
+        var vp = _player.Config.Video;
+        double u = Math.Clamp(pos.X / ActualWidth, 0, 1);
+        double v = Math.Clamp(pos.Y / ActualHeight, 0, 1);
+
+        var zoom = vp.Zoom / 100.0;
+        var center = vp.ZoomCenter;
+        var (minX, maxX) = PanBoundsCalculator.PanRange(zoom, center.X, _dragUnzoomedWidth, _dragBaselineX);
+        var (minY, maxY) = PanBoundsCalculator.PanRange(zoom, center.Y, _dragUnzoomedHeight, _dragBaselineY);
+
+        // min and max values are used because a non-standard zoom center can make left and right margins asymmetrical
+        var targetX = maxX - u * (maxX - minX);
+        var targetY = maxY - v * (maxY - minY);
+        RaiseEvent(new ZoomOverviewPanRequestedEventArgs(PanRequestedEvent, this, targetX, targetY));
+    }
 
     private void RecalcVideoSize() => UI(() =>
     {
