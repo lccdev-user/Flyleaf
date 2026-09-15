@@ -117,6 +117,9 @@ public partial class BitmapRenderer : NotifyPropertyChanged, IDisposable
         _initialized = false;
     }
 
+    /// <summary>
+    /// Copies one frame in. The bitmap is borrowed: the caller keeps ownership and disposes it.
+    /// </summary>
     public void UpdateFrame(Bitmap bmp)
     {
         Bitmap src = bmp;
@@ -149,9 +152,10 @@ public partial class BitmapRenderer : NotifyPropertyChanged, IDisposable
         finally
         {
             src.UnlockBits(data);
+
+            // Only the clone made above, never bmp itself - that one belongs to the caller.
             if (!ReferenceEquals(src, bmp))
                 src.Dispose();
-            bmp.Dispose();
         }
     }
 
