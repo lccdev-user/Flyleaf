@@ -173,19 +173,32 @@ float4 main(PSIn i) : SV_TARGET
         private void OnFrameReady() => FrameReady?.Invoke();
 
         /// <summary>
-        /// Renders the minimap into the owned render-device texture and returns it
-        /// (null if nothing to draw). Call on the render thread.
+        /// Renders the minimap into the owned render-device texture and hands it to
+        /// <paramref name="consume"/>, returning what the consumer returned. Call on the render thread.
         /// </summary>
-        public ID3D11Texture2D RenderMinimap()
+        /// <remarks>
+        /// <para>
+        /// The texture is handed over rather than returned, because it belongs to this renderer and the
+        /// next resize tick or an unbind - both of which arrive on the UI thread - can throw it away. A
+        /// caller holding a returned reference would sooner or later read a disposed texture. Consuming
+        /// it inside the lock that guards its lifetime is what makes that impossible.
+        /// </para>
+        /// <para>
+        /// Lock order: this takes <c>_lockRecreatedResources</c> and the consumer may then take the frame
+        /// provider's own lock. Never the other way round - the provider calls in here only from outside
+        /// its lock, and that is what keeps the two from deadlocking.
+        /// </para>
+        /// </remarks>
+        public bool RenderMinimapInto(Func<ID3D11Texture2D, bool> consume)
         {
-            if (!IsInitialized || _disposed || _device is null)
-                return null;
+            if (consume is null || !IsInitialized || _disposed || _device is null)
+                return false;
 
             CheckDeviceChanged();
 
             var srv = _frameSource?.FrameSrv;
             if (srv == null)
-                return null;
+                return false;
 
             _videoWidth = _frameSource.VideoWidth;
             _videoHeight = _frameSource.VideoHeight;
@@ -198,10 +211,10 @@ float4 main(PSIn i) : SV_TARGET
                 // checks above and this point the control can have been unbound - which nulls the
                 // device - or the other thread can have thrown the minimap texture away.
                 if (!IsInitialized || _disposed || _device is null)
-                    return null;
+                    return false;
 
                 if (!EnsureMinimapTexture(ControlWidth, ControlHeight))
-                    return null;
+                    return false;
 
                 if (_showZoomBox)
                     UpdateConstantBuffer();
@@ -225,7 +238,8 @@ float4 main(PSIn i) : SV_TARGET
                 _context.OMSetRenderTargets((ID3D11RenderTargetView)null);
                 _context.PSSetShaderResource(0, null);
 
-                return _minimapTex;
+                // Still under the lock: the texture cannot be recreated or disposed under the consumer.
+                return consume(_minimapTex);
             }
         }
 
@@ -397,13 +411,13 @@ float4 main(PSIn i) : SV_TARGET
 
             Log.Debug($"UpdateSize({actualWidth}, {actualHeight})");
 
-            // Same lock as RenderMinimap: this arrives from the UI thread on every resize tick while the
+            // Same lock as RenderMinimapInto: this arrives from the UI thread on every resize tick while the
             // render thread may be drawing, and it invalidates the very texture that draw is using.
             lock (_lockRecreatedResources)
             {
                 ControlWidth = actualWidth;
                 ControlHeight = actualHeight;
-                // _minimapTex is recreated lazily on the next RenderMinimap.
+                // _minimapTex is recreated lazily on the next RenderMinimapInto.
                 _minimapWidth = _minimapHeight = 0;
                 SetViewport(ControlWidth, ControlHeight);
             }
