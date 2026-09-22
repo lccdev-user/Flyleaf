@@ -1,4 +1,6 @@
-﻿namespace FlyleafLib;
+﻿using System.Windows;
+
+namespace FlyleafLib;
 
 public static class Logger
 {
@@ -26,18 +28,8 @@ public static class Logger
             logLevels.Add(loglevel, loglevel.ToString().PadRight(5, ' '));
 
         // Flush File Data on Application Exit
-        System.Windows.Application.Current.Exit += (o, e) =>
-        {
-            lock (lockFileStream)
-            {
-                if (fileStream != null)
-                {
-                    while (fileData.TryDequeue(out byte[] data))
-                        fileStream.Write(data, 0, data.Length);
-                    fileStream.Dispose();
-                }
-            }
-        };
+        Application.Current.Exit += (_, _) => DisposeFileStream();
+        AppDomain.CurrentDomain.UnhandledException += (_, _) => DisposeFileStream();
     }
 
     internal static void SetOutput()
@@ -77,7 +69,7 @@ public static class Logger
                     fileStream = new(output, FileMode.Append, FileAccess.Write);
                     Output = FilePtr;
                 }
-                    
+
                 else if (Engine.Config.LogRollMaxFiles > 0 && Engine.Config.LogRollMaxFileSize > 0)
                 {
                     RollLogFiles(); // If we have rolling log enables and do not append, then we need to roll the log files first
@@ -196,6 +188,19 @@ public static class Logger
     {
         if (logLevel <= Engine.Config.LogLevel)
             Output($"{DateTime.Now.ToString(Engine.Config.LogDateTimeFormat)} | {logLevels[logLevel]} | {msg}");
+    }
+
+    private static void DisposeFileStream()
+    {
+        lock (lockFileStream)
+        {
+            if (fileStream != null)
+            {
+                while (fileData.TryDequeue(out byte[] data))
+                    fileStream.Write(data, 0, data.Length);
+                fileStream.Dispose();
+            }
+        }
     }
 }
 
