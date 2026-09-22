@@ -1,4 +1,7 @@
-﻿namespace FlyleafLib;
+﻿using System.Linq;
+using System.Windows;
+
+namespace FlyleafLib;
 
 public static class Logger
 {
@@ -20,24 +23,19 @@ public static class Logger
     static Dictionary<LogLevel, string>
                         logLevels = [];
 
+    private static string _logBaseDir;
+    private static string _logBaseName;
+    private static string _logExtension;
+    private static int _currentRollIndex = -1;
+
     static Logger()
     {
         foreach (LogLevel loglevel in Enum.GetValues<LogLevel>())
             logLevels.Add(loglevel, loglevel.ToString().PadRight(5, ' '));
 
         // Flush File Data on Application Exit
-        System.Windows.Application.Current.Exit += (o, e) =>
-        {
-            lock (lockFileStream)
-            {
-                if (fileStream != null)
-                {
-                    while (fileData.TryDequeue(out byte[] data))
-                        fileStream.Write(data, 0, data.Length);
-                    fileStream.Dispose();
-                }
-            }
-        };
+        Application.Current.Exit += (_, _) => DisposeFileStream();
+        AppDomain.CurrentDomain.UnhandledException += (_, _) => DisposeFileStream();
     }
 
     internal static void SetOutput()
@@ -74,19 +72,22 @@ public static class Logger
 
                 if (Engine.Config.LogAppend)
                 {
-                    fileStream = new(output, FileMode.Append, FileAccess.Write);
+                    fileStream = new(output, FileMode.Append, FileAccess.Write, FileShare.Read);
                     Output = FilePtr;
                 }
-                    
+
                 else if (Engine.Config.LogRollMaxFiles > 0 && Engine.Config.LogRollMaxFileSize > 0)
                 {
-                    RollLogFiles(); // If we have rolling log enables and do not append, then we need to roll the log files first
-                    fileStream = new(Engine.Config.LogOutput, FileMode.Create, FileAccess.Write);
+                    _logBaseDir = string.IsNullOrEmpty(dir) ? "." : dir;
+                    _logBaseName = Path.GetFileNameWithoutExtension(output);
+                    _logExtension = Path.GetExtension(output);
+
+                    OpenNextRollFile();
                     Output = FileRollPtr;
                 }
                 else
                 {
-                    fileStream = new(output, FileMode.Create, FileAccess.Write);
+                    fileStream = new(output, FileMode.Create, FileAccess.Write, FileShare.Read);
                     Output = FilePtr;
                 }
             }
@@ -127,25 +128,91 @@ public static class Logger
         }
     }
 
-    static void RollLogFiles()
+    static void OpenNextRollFile()
     {
-        string name = Engine.Config.LogOutput;
+        FileStream fs  = null;
+        int        idx = GetNextStartingIndex();
 
-        for (long i = Engine.Config.LogRollMaxFiles; i > 0; i--)
+        while (fs == null)
         {
-            string logFile = $"{name}.{i}";
-            string nextLogFile = $"{name}.{i + 1}";
-            if (File.Exists(logFile))
+            string candidate = Path.Combine(_logBaseDir, $"{_logBaseName}.{idx}{_logExtension}");
+
+            try
             {
-                if (i == Engine.Config.LogRollMaxFiles)
-                    File.Delete(logFile);
-                else
-                    File.Move(logFile, nextLogFile);
+                fs = new(candidate, FileMode.CreateNew, FileAccess.Write, FileShare.Read);
+            }
+            catch (IOException)
+            {
+                // Index already taken (e.g. by another process right now)
+                idx++;
             }
         }
 
-        if (File.Exists(name))
-            File.Move(name, $"{name}.{1}");
+        fileStream = fs;
+        _currentRollIndex = idx;
+
+        CleanupOldRollFiles();
+    }
+
+    static int GetNextStartingIndex()
+    {
+        try
+        {
+            int maxIdx = Directory
+                .EnumerateFiles(_logBaseDir, $"{_logBaseName}.*{_logExtension}")
+                .Select(ParseRollIndex)
+                .Where(i => i >= 0)
+                .DefaultIfEmpty(-1)
+                .Max();
+
+            return maxIdx + 1;
+        }
+        catch
+        {
+            return 0;
+        }
+    }
+
+    static void CleanupOldRollFiles()
+    {
+        try
+        {
+            var toDelete = Directory
+                .EnumerateFiles(_logBaseDir, $"{_logBaseName}.*{_logExtension}")
+                .Select(f => (Path: f, Index: ParseRollIndex(f)))
+                .Where(f => f.Index >= 0 && f.Index < _currentRollIndex)
+                .OrderByDescending(f => f.Index)
+                .Skip((int)Math.Max(Engine.Config.LogRollMaxFiles - 1, 0))
+                .ToList();
+
+            foreach (var f in toDelete)
+            {
+                try { File.Delete(f.Path); }
+                catch
+                {
+                    // best-effort cleanup
+                }
+            }
+        }
+        catch
+        {
+            // best-effort cleanup
+        }
+    }
+
+    static int ParseRollIndex(string filePath)
+    {
+        string fileName = Path.GetFileName(filePath);
+        string prefix   = _logBaseName + ".";
+
+        if (fileName.StartsWith(prefix) && fileName.EndsWith(_logExtension) && fileName.Length > prefix.Length + _logExtension.Length)
+        {
+            string middle = fileName.Substring(prefix.Length, fileName.Length - prefix.Length - _logExtension.Length);
+            if (int.TryParse(middle, out int idx))
+                return idx;
+        }
+
+        return -1;
     }
 
     static void HandleLogFileRolling()
@@ -157,8 +224,7 @@ public static class Logger
             lock (lockFileStream)
             {
                 fileStream.Dispose();
-                RollLogFiles();
-                fileStream = new(Engine.Config.LogOutput, FileMode.Create, FileAccess.Write);
+                OpenNextRollFile();
             }
 
             fileTaskRunning = false;
@@ -196,6 +262,19 @@ public static class Logger
     {
         if (logLevel <= Engine.Config.LogLevel)
             Output($"{DateTime.Now.ToString(Engine.Config.LogDateTimeFormat)} | {logLevels[logLevel]} | {msg}");
+    }
+
+    private static void DisposeFileStream()
+    {
+        lock (lockFileStream)
+        {
+            if (fileStream != null)
+            {
+                while (fileData.TryDequeue(out byte[] data))
+                    fileStream.Write(data, 0, data.Length);
+                fileStream.Dispose();
+            }
+        }
     }
 }
 
