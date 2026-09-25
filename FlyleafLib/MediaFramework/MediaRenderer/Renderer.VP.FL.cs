@@ -310,6 +310,7 @@ public unsafe partial class Renderer
         // TODO: Dispose filters?*
         SwsDispose();
         SubsDispose();
+        FisheyeDispose();
 
         if (snapshot != null)
         {

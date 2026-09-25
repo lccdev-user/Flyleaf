@@ -39,24 +39,8 @@ public unsafe partial class Renderer
         {
             lock (lockRenderLoops)
             {
-                var rFrame = Frames.RendererFrame;
-
-                if (rFrame == null)
+                if (!RenderCurrentFrameInto(snapshot))
                     return null;
-
-                if (VideoProcessor == VideoProcessors.D3D11)
-                {
-                    vc.VideoProcessorGetStreamDestRect  (vp, 0, out _, out var d3destOld);
-                    vc.VideoProcessorGetOutputTargetRect(vp,    out _, out var d3outOld);
-                    D3Render(rFrame.VPIV, snapshot.d3rtv, snapshot.d3view);
-                    vc.VideoProcessorSetStreamDestRect  (vp, 0, true, d3destOld);
-                    vc.VideoProcessorSetOutputTargetRect(vp,    true, d3outOld);
-                }
-                else
-                {
-                    FLRender(rFrame.SRV, snapshot.rtv, snapshot.view);
-                    context.RSSetViewport(Viewport);
-                }
             }
 
             context.CopyResource(snapshot.txtStage, snapshot.txt);
@@ -64,6 +48,39 @@ public unsafe partial class Renderer
             return snapshot.txtStage;
         }
         catch { return null; }
+    }
+
+    /// <summary>
+    /// Draws the frame currently on screen into an off-screen RGBA target, at the video's own size and
+    /// with neither zoom nor pan applied. The caller holds <c>lockRenderLoops</c>.
+    /// </summary>
+    /// <remarks>
+    /// Which video processor is active decides how: the D3D11 one owns the frame as a
+    /// VideoProcessorInputView, which a pixel shader cannot read, so it blits through the processor with
+    /// its rectangles put back afterwards.
+    /// </remarks>
+    bool RenderCurrentFrameInto(Snapshot target)
+    {
+        var rFrame = Frames.RendererFrame;
+
+        if (rFrame == null)
+            return false;
+
+        if (VideoProcessor == VideoProcessors.D3D11)
+        {
+            vc.VideoProcessorGetStreamDestRect  (vp, 0, out _, out var d3destOld);
+            vc.VideoProcessorGetOutputTargetRect(vp,    out _, out var d3outOld);
+            D3Render(rFrame.VPIV, target.d3rtv, target.d3view);
+            vc.VideoProcessorSetStreamDestRect  (vp, 0, true, d3destOld);
+            vc.VideoProcessorSetOutputTargetRect(vp,    true, d3outOld);
+        }
+        else
+        {
+            FLRender(rFrame.SRV, target.rtv, target.view);
+            context.RSSetViewport(Viewport);
+        }
+
+        return true;
     }
 
     public Bitmap TakeSnapshot(uint width = 0, uint height = 0)
@@ -87,46 +104,6 @@ public unsafe partial class Renderer
             return GetBitmap(texture);
         }
         catch { return null; }
-    }
-
-    /// <summary>
-    /// Fills an existing bitmap with the frame currently on screen, at the video's own size and with
-    /// neither zoom nor pan applied - what <see cref="TakeSnapshot"/> returns, without the allocation.
-    /// </summary>
-    /// <remarks>
-    /// The whole of it runs under the render loop lock, which <see cref="TakeSnapshot"/> does not do:
-    /// this one is meant to be called over and over from a worker thread, and the immediate context
-    /// cannot be used from two threads at once. The map waits for the copy to finish on the GPU, so the
-    /// render thread can be held up for the length of one readback.
-    /// </remarks>
-    /// <returns>False if there is nothing on screen, or the bitmap is not the size of the video.</returns>
-    public bool TakeSnapshotInto(Bitmap destination)
-    {
-        if (destination == null)
-            return false;
-
-        try
-        {
-            lock (lockRenderLoops)
-            {
-                uint width  = VisibleWidth;
-                uint height = VisibleHeight;
-
-                if (width == 0 || height == 0 || destination.Width != width || destination.Height != height)
-                    return false;
-
-                var snapshot = GetSnapshot(width, height);
-                var texture  = GetTexture(snapshot);
-
-                if (texture is null)
-                    return false;
-
-                CopyToBitmap(texture, destination);
-
-                return true;
-            }
-        }
-        catch { return false; }
     }
 
     public BitmapSource TakeSnapshotBitmapSource(uint width = 0, uint height = 0)
