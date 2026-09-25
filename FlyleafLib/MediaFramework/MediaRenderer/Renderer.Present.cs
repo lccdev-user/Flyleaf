@@ -15,6 +15,8 @@ public unsafe partial class Renderer
 
     internal void RenderRequest(VideoFrame frame = null, bool forceClear = false)
     {
+        bool startIdleLoop = false;
+
         lock (lockRenderLoops)
         {
             renderRequestAt = DateTime.UtcNow.Ticks;
@@ -22,13 +24,23 @@ public unsafe partial class Renderer
             if ((frame != null || forceClear))
                 Frames.SetRendererFrame(frame);
 
-            if (!SwapChain.CanPresent || !canIdle || isIdleRunning)
-                return;
-
-            isIdleRunning = true;
+            if (SwapChain.CanPresent && canIdle && !isIdleRunning)
+            {
+                isIdleRunning   = true;
+                startIdleLoop   = true;
+            }
         }
 
-        Task.Run(RenderIdleLoop);
+        // This path puts a frame on screen just as RenderPlay does - frame stepping, seeking and the
+        // first frame after buffering all come through here - so anything deriving a second picture from
+        // it has to hear about it, or it is left showing whatever was there before.
+        // Outside the lock: a handler that wants the frame back off the renderer would otherwise be
+        // taking this same lock from inside it.
+        if (frame != null)
+            FramePresented?.Invoke(frame);
+
+        if (startIdleLoop)
+            Task.Run(RenderIdleLoop);
     }
     internal void RenderIdleStart(bool force = false)
     {
