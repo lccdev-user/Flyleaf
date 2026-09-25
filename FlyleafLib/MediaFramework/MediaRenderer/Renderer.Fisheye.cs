@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using System.Runtime.InteropServices;
 
 using Vortice.Direct3D11;
@@ -41,11 +41,15 @@ public readonly record struct FisheyeFrame(nint Data, int Stride, int Width, int
 public unsafe partial class Renderer
 {
     /// <summary>
-    /// The unwrap reads an ordinary RGBA texture, so it needs no video format handling of its own.
-    /// Opaque on purpose: the sinks draw these through a Bgra32 bitmap, and whatever alpha the video
-    /// shader happened to leave in the intermediate is none of a quadrant's business.
+    /// The unwrap itself is applied by the shader's own header, under the same define; this only reads
+    /// the RGBA intermediate, so it needs no video format handling of its own. Opaque on purpose: the
+    /// sinks draw these through a Bgra32 bitmap, and whatever alpha the video shader happened to leave
+    /// in the intermediate is none of a quadrant's business.
     /// </summary>
-    const string            FISHEYE_SAMPLE  = "color = float4(Texture1.Sample(Sampler, FisheyeProject(input.Texture)).rgb, 1.0);";
+    const string            FISHEYE_SAMPLE  = "color = float4(Texture1.Sample(Sampler, input.Texture).rgb, 1.0);";
+
+    /// <summary>The offscreen pass draws a bare quad, so there is no crop to undo and none to apply.</summary>
+    static readonly Vector4 fisheyeNoCrop   = new(0, 0, 1, 1);
 
     static readonly List<string>
                             fisheyeDefines  = ["dFisheye"];
@@ -66,6 +70,76 @@ public unsafe partial class Renderer
                             fisheyeSourceSrvs = new ID3D11ShaderResourceView[1];
     ID3D11Texture2D?        fisheyeSourceTxt;
     FisheyeBufferType       fisheyeData;
+    FisheyeSegment?         fisheyeView;
+    bool                    fisheyeUnwrap;
+
+    /// <summary>
+    /// Whether this stream is to be drawn unwrapped. Set before the stream is opened, and deliberately
+    /// kept apart from <see cref="FisheyeView"/>.
+    /// </summary>
+    /// <remarks>
+    /// The unwrap is a pixel shader, so it needs the Flyleaf video processor - and that choice is made
+    /// once, when the stream is configured. Deciding it later, from the first frame, is too late: the
+    /// frames already in hand were filled for the D3D11 processor, which gives them a
+    /// VideoProcessorInputView and no shader resource view, so FLRender has nothing to sample and
+    /// returns. A paused stream decodes no more of them, and the panel stays black.
+    /// </remarks>
+    public bool FisheyeUnwrapEnabled
+    {
+        get => fisheyeUnwrap;
+        set
+        {
+            if (fisheyeUnwrap == value)
+                return;
+
+            fisheyeUnwrap = value;
+
+            if (!value)
+                fisheyeView = null;
+
+            VPRequest(VPRequestType.ReConfigVP);
+        }
+    }
+
+    /// <summary>
+    /// Unwraps the video itself as it is drawn, rather than producing a second picture beside it. Null
+    /// switches it off.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This is the single view mode: the panel shows one quadrant of a fisheye camera and that quadrant
+    /// is the video, so the unwrap belongs in the shader the frame is drawn with. Everything that reads
+    /// the picture back - a snapshot, an export - goes through the same shader and therefore sees the
+    /// same thing, which is what the decode time transform this replaces had to arrange by rewriting
+    /// the decoded frame.
+    /// </para>
+    /// <para>
+    /// Switching it on or off changes which shader variant the stream needs, so it asks for a full
+    /// reconfigure; changing the geometry only refills the constant buffer. The same is true of
+    /// <see cref="Pano360Config.Enabled"/>, and for the same reason.
+    /// </para>
+    /// </remarks>
+    public FisheyeSegment? FisheyeView
+    {
+        get => fisheyeView;
+        set
+        {
+            // Set once per presented frame, so the common case is no change at all and must cost
+            // nothing: a reconfigure per frame would rebuild the shader variant for a living.
+            if (fisheyeView.Equals(value))
+                return;
+
+            var was = fisheyeView.HasValue;
+            fisheyeView = value;
+
+            // Arriving for the first time brings the define with it, which is a different shader
+            // variant; after that only the constants change.
+            if (was != value.HasValue)
+                VPRequest(VPRequestType.ReConfigVP);
+            else
+                VPRequest(VPRequestType.Fisheye);
+        }
+    }
 
     /// <summary>
     /// Unwraps the frame currently on screen, one quadrant per segment, and hands each of them to
@@ -120,11 +194,7 @@ public unsafe partial class Renderer
 
                     var target = GetFisheyeTarget(i, (uint)segment.TargetWidth, (uint)segment.TargetHeight);
 
-                    fisheyeData.Arc     = new(segment.AngleStart, segment.AngleSpan, segment.OuterRadius, segment.InnerRadius);
-                    fisheyeData.Source  = new(segment.CenterX, segment.CenterY,
-                                              segment.SourceWidth  > 0 ? 1f / segment.SourceWidth  : 0,
-                                              segment.SourceHeight > 0 ? 1f / segment.SourceHeight : 0);
-                    context.UpdateSubresource(fisheyeData, buffer);
+                    SetFisheyeBuffer(segment, fisheyeNoCrop, buffer);
 
                     context.OMSetRenderTargets(target.rtv);
                     context.RSSetViewport(target.view);
@@ -191,6 +261,33 @@ public unsafe partial class Renderer
             context.PSSetShader(current);
     }
 
+    /// <summary>
+    /// Refills the unwrap's constants for the main pass, from the crop the vertex shader is using.
+    /// </summary>
+    void FLSetFisheye()
+    {
+        vpRequests &= ~VPRequestType.Fisheye;
+
+        if (fisheyeView is not FisheyeSegment segment)
+            return;
+
+        fisheyeBuffer ??= device.CreateBuffer(fisheyeDesc);
+
+        context.PSSetConstantBuffer(2, fisheyeBuffer);
+        SetFisheyeBuffer(segment, new(vsData.Crop.X, vsData.Crop.Y, vsData.Crop.Z, vsData.Crop.W), fisheyeBuffer);
+    }
+
+    void SetFisheyeBuffer(FisheyeSegment segment, Vector4 crop, ID3D11Buffer buffer)
+    {
+        fisheyeData.Arc     = new(segment.AngleStart, segment.AngleSpan, segment.OuterRadius, segment.InnerRadius);
+        fisheyeData.Source  = new(segment.CenterX, segment.CenterY,
+                                  segment.SourceWidth  > 0 ? 1f / segment.SourceWidth  : 0,
+                                  segment.SourceHeight > 0 ? 1f / segment.SourceHeight : 0);
+        fisheyeData.Crop    = crop;
+
+        context.UpdateSubresource(fisheyeData, buffer);
+    }
+
     bool EnsureFisheyeResources(Snapshot source)
     {
         fisheyePS       ??= ShaderCompiler.CompilePS(device, "fisheye", FISHEYE_SAMPLE, fisheyeDefines);
@@ -225,6 +322,13 @@ public unsafe partial class Renderer
 
     void FisheyeDispose()
     {
+        // With the device goes the stream, and with the stream the segment it was unwrapping. Left
+        // standing, the next stream's first update is a change of parameters rather than a switch from
+        // off to on - constants without a reconfigure - and a paused player, which presents one frame
+        // and stops, has nothing left to redraw with them. The panel then keeps showing the previous
+        // camera's quadrant until something else forces a render.
+        fisheyeView = null;
+
         for (int i = 0; i < fisheyeTargets.Length; i++)
         {
             fisheyeTargets[i]?.Dispose();
@@ -246,7 +350,8 @@ public unsafe partial class Renderer
     struct FisheyeBufferType
     {
         public Vector4 Arc;     // angle at the left edge, angle across, outer radius, inner radius
-        public Vector4 Source;  // centre x, centre y, 1 / source width, 1 / source height
+        public Vector4 Source;  // centre x, centre y, 1 / picture width, 1 / picture height
+        public Vector4 Crop;    // the visible picture inside the texture: left, top, right, bottom
     }
 }
 #nullable disable

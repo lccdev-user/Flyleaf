@@ -46,6 +46,12 @@ color = float4(
             defines.Add("dPano360");
         }
 
+        if (fisheyeView != null)
+        {
+            psId += "F";
+            defines.Add("dFisheye");
+        }
+
         if (ucfg.hasFLFilters) // TODO: fix vp switch when set filters or unset*
         {
             psId += "-";

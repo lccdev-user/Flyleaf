@@ -244,6 +244,11 @@ public unsafe partial class Renderer
 
                 if (VideoProcessor == VideoProcessors.D3D11)
                     return;
+
+                // The shader variant has just been rebuilt, so its constants have to be put back with
+                // it. Set on the incoming flags and not on vpRequests: the copy below would discard it.
+                if (fisheyeView != null)
+                    vpRequestsIn |= VPRequestType.Fisheye;
             }
 
             vpRequests  = vpRequestsIn;
@@ -256,7 +261,12 @@ public unsafe partial class Renderer
                 FLSetRotationFlip();
 
             if (vpRequests.HasFlag(VPRequestType.Crop))
+            {
                 FLSetCrop();
+
+                if (fisheyeView != null)
+                    vpRequests |= VPRequestType.Fisheye;
+            }
 
             if (vpRequests.HasFlag(VPRequestType.Resize))
                 SetSize();
@@ -272,6 +282,11 @@ public unsafe partial class Renderer
 
             if (vpRequests.HasFlag(VPRequestType.Pano360))
                 FLSetPano360();
+
+            // After Crop above: the unwrap works in the visible picture and needs the rectangle the
+            // vertex shader has just been given.
+            if (vpRequests.HasFlag(VPRequestType.Fisheye))
+                FLSetFisheye();
 
             if (vpRequests.HasFlag(VPRequestType.UpdateVS))
                 context.UpdateSubresource(vsData, vsBuffer);
