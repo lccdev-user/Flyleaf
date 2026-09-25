@@ -21,6 +21,18 @@ public unsafe partial class Renderer
     private int _transformedWidth;
     private int _transformedHeight;
     public event Action<VideoFrame>? RenderChild;
+
+    /// <summary>
+    /// Raised on the render thread with the frame that has just been put on screen.
+    /// </summary>
+    /// <remarks>
+    /// Decoding order and display order are not the same thing: reverse playback decodes a GOP forwards
+    /// and then shows it backwards (see VideoDecoder.RunInternalReverse). Anything deriving a second
+    /// picture from the frame - the fisheye quadrants - has to follow this, not the decoder, or it plays
+    /// a GOP forwards while the video plays it back. Handlers run on the render thread and must not
+    /// block it.
+    /// </remarks>
+    public event Action<VideoFrame>? FramePresented;
     
     public EventHandler<ID2D1DeviceContext>? Overview2DInitialized;
     public EventHandler<ID2D1DeviceContext>? Overview2DDisposing;

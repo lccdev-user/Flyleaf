@@ -89,6 +89,46 @@ public unsafe partial class Renderer
         catch { return null; }
     }
 
+    /// <summary>
+    /// Fills an existing bitmap with the frame currently on screen, at the video's own size and with
+    /// neither zoom nor pan applied - what <see cref="TakeSnapshot"/> returns, without the allocation.
+    /// </summary>
+    /// <remarks>
+    /// The whole of it runs under the render loop lock, which <see cref="TakeSnapshot"/> does not do:
+    /// this one is meant to be called over and over from a worker thread, and the immediate context
+    /// cannot be used from two threads at once. The map waits for the copy to finish on the GPU, so the
+    /// render thread can be held up for the length of one readback.
+    /// </remarks>
+    /// <returns>False if there is nothing on screen, or the bitmap is not the size of the video.</returns>
+    public bool TakeSnapshotInto(Bitmap destination)
+    {
+        if (destination == null)
+            return false;
+
+        try
+        {
+            lock (lockRenderLoops)
+            {
+                uint width  = VisibleWidth;
+                uint height = VisibleHeight;
+
+                if (width == 0 || height == 0 || destination.Width != width || destination.Height != height)
+                    return false;
+
+                var snapshot = GetSnapshot(width, height);
+                var texture  = GetTexture(snapshot);
+
+                if (texture is null)
+                    return false;
+
+                CopyToBitmap(texture, destination);
+
+                return true;
+            }
+        }
+        catch { return false; }
+    }
+
     public BitmapSource TakeSnapshotBitmapSource(uint width = 0, uint height = 0)
     {
         try
@@ -140,7 +180,14 @@ public unsafe partial class Renderer
     }
     public Bitmap GetBitmap(ID3D11Texture2D txtStage)
     {
-        var bmp     = new Bitmap((int)txtStage.Description.Width, (int)txtStage.Description.Height);
+        var bmp = new Bitmap((int)txtStage.Description.Width, (int)txtStage.Description.Height);
+        CopyToBitmap(txtStage, bmp);
+
+        return bmp;
+    }
+
+    void CopyToBitmap(ID3D11Texture2D txtStage, Bitmap bmp)
+    {
         var db      = context.Map(txtStage, 0);
         var bmpData = bmp.LockBits(new(0, 0, bmp.Width, bmp.Height), ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
 
@@ -162,8 +209,6 @@ public unsafe partial class Renderer
 
         bmp.UnlockBits(bmpData);
         context.Unmap(txtStage, 0);
-
-        return bmp;
     }
     public BitmapSource GetBitmapSource(ID3D11Texture2D txtStage)
     {

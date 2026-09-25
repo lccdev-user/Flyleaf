@@ -210,6 +210,10 @@ public unsafe partial class Renderer
                 Frames.SetRendererFrame(frame);
             }
 
+            // Outside the lock: a handler that wants the frame back off the renderer would otherwise be
+            // taking this same lock from inside it.
+            FramePresented?.Invoke(frame);
+
             return true;
         }
         catch (SharpGenException e)
