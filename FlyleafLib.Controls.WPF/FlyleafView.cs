@@ -33,6 +33,9 @@ public class FlyleafView : Decorator, IHostPlayer, IDisposable
     public static readonly DependencyProperty HostDataContextProperty =
         DependencyProperty.Register(nameof(HostDataContext), typeof(object), FlType, new(null));
 
+    public static readonly DependencyProperty VideoClipProperty =
+        DependencyProperty.Register(nameof(VideoClip), typeof(Geometry), FlType, new(null, OnVideoClipChanged));
+
     private HybridVideoPresenter _presenter;
     private bool _isFullScreen;
 
@@ -59,6 +62,18 @@ public class FlyleafView : Decorator, IHostPlayer, IDisposable
     {
         get => GetValue(HostDataContextProperty);
         set => SetValue(HostDataContextProperty, value);
+    }
+
+    /// <summary>
+    /// Clips the video alone, in this element's own coordinates. The overlay
+    /// <see cref="Decorator.Child"/> is deliberately left out of it: a caller that wants a
+    /// non-rectangular picture - the circular fisheye image, say - still needs its overlay controls in
+    /// the corners the picture no longer covers.
+    /// </summary>
+    public Geometry VideoClip
+    {
+        get => (Geometry)GetValue(VideoClipProperty);
+        set => SetValue(VideoClipProperty, value);
     }
 
     public double DpiX { get; private set; } = 1;
@@ -148,6 +163,16 @@ public class FlyleafView : Decorator, IHostPlayer, IDisposable
     private static void OnReplicaPlayerChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
         => ((FlyleafView)d).SetReplicaPlayer((Player)e.OldValue);
 
+    private static void OnVideoClipChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+        => ((FlyleafView)d).ApplyVideoClip();
+
+    // The presenter comes and goes with the bridge, so the clip has to be put back on each new one.
+    private void ApplyVideoClip()
+    {
+        if (_presenter != null)
+            _presenter.Clip = VideoClip;
+    }
+
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
         UpdateDpi();
@@ -215,6 +240,7 @@ public class FlyleafView : Decorator, IHostPlayer, IDisposable
         AddVisualChild(_presenter);
         InvalidateMeasure();
         _presenter.Attach(bridge);
+        ApplyVideoClip();
 
         DebugLogger.Print($"[FLV] Presenter ready control={size.Width}x{size.Height} mode={ResolveMode()}");
     }
