@@ -1,4 +1,3 @@
-using System.Drawing;
 using System.Numerics;
 using System.Runtime.InteropServices;
 
@@ -25,7 +24,19 @@ public readonly record struct FisheyeSegment(
     float AngleStart,
     float AngleSpan,
     float OuterRadius,
-    float InnerRadius);
+    float InnerRadius,
+    int TargetWidth,
+    int TargetHeight);
+
+/// <summary>
+/// One unwrapped quadrant, as BGRA rows.
+/// </summary>
+/// <remarks>
+/// Valid for the duration of the call it is handed to and no longer: the memory is a mapped staging
+/// texture, unmapped the moment that call returns. Copy out of it, do not keep the pointer, and do not
+/// block - the render loop lock is held throughout.
+/// </remarks>
+public readonly record struct FisheyeFrame(nint Data, int Stride, int Width, int Height);
 
 public unsafe partial class Renderer
 {
@@ -57,8 +68,8 @@ public unsafe partial class Renderer
     FisheyeBufferType       fisheyeData;
 
     /// <summary>
-    /// Unwraps the frame currently on screen into the given bitmaps, one per segment, and reads them
-    /// back. A null bitmap skips its segment.
+    /// Unwraps the frame currently on screen, one quadrant per segment, and hands each of them to
+    /// <paramref name="consume"/> as mapped pixels. A null segment is skipped.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -73,9 +84,9 @@ public unsafe partial class Renderer
     /// for the GPU rather than one per segment.
     /// </para>
     /// </remarks>
-    public bool RenderFisheyeSegments(FisheyeSegment[] segments, Bitmap?[] destinations)
+    public bool RenderFisheyeSegments(FisheyeSegment?[] segments, Action<int, FisheyeFrame> consume)
     {
-        if (segments == null || destinations == null || segments.Length != destinations.Length)
+        if (segments == null || consume == null)
             return false;
 
         lock (lockRenderLoops)
@@ -104,15 +115,15 @@ public unsafe partial class Renderer
 
                 for (int i = 0; i < segments.Length; i++)
                 {
-                    if (destinations[i] is not Bitmap destination)
+                    if (segments[i] is not FisheyeSegment segment || segment.TargetWidth <= 0 || segment.TargetHeight <= 0)
                         continue;
 
-                    var target = GetFisheyeTarget(i, (uint)destination.Width, (uint)destination.Height);
+                    var target = GetFisheyeTarget(i, (uint)segment.TargetWidth, (uint)segment.TargetHeight);
 
-                    fisheyeData.Arc     = new(segments[i].AngleStart, segments[i].AngleSpan, segments[i].OuterRadius, segments[i].InnerRadius);
-                    fisheyeData.Source  = new(segments[i].CenterX, segments[i].CenterY,
-                                              segments[i].SourceWidth  > 0 ? 1f / segments[i].SourceWidth  : 0,
-                                              segments[i].SourceHeight > 0 ? 1f / segments[i].SourceHeight : 0);
+                    fisheyeData.Arc     = new(segment.AngleStart, segment.AngleSpan, segment.OuterRadius, segment.InnerRadius);
+                    fisheyeData.Source  = new(segment.CenterX, segment.CenterY,
+                                              segment.SourceWidth  > 0 ? 1f / segment.SourceWidth  : 0,
+                                              segment.SourceHeight > 0 ? 1f / segment.SourceHeight : 0);
                     context.UpdateSubresource(fisheyeData, buffer);
 
                     context.OMSetRenderTargets(target.rtv);
@@ -123,10 +134,30 @@ public unsafe partial class Renderer
                     drawn = true;
                 }
 
+                // Every draw and copy is issued above before the first map below, so the wait for the
+                // GPU is one, not one per quadrant.
                 if (drawn)
                     for (int i = 0; i < segments.Length; i++)
-                        if (destinations[i] is Bitmap destination && fisheyeTargets[i] is Snapshot target)
-                            CopyToBitmap(target.txtStage, destination);
+                    {
+                        // The same test the draw loop made: a segment it skipped has no fresh pixels,
+                        // and its target may still be holding the one before.
+                        if (segments[i] is not FisheyeSegment segment
+                            || segment.TargetWidth <= 0
+                            || segment.TargetHeight <= 0
+                            || fisheyeTargets[i] is not Snapshot target)
+                            continue;
+
+                        var mapped = context.Map(target.txtStage, 0);
+
+                        try
+                        {
+                            consume(i, new FisheyeFrame(mapped.DataPointer, (int)mapped.RowPitch, (int)target.Width, (int)target.Height));
+                        }
+                        finally
+                        {
+                            context.Unmap(target.txtStage, 0);
+                        }
+                    }
 
                 return drawn;
             }
