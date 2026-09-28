@@ -96,8 +96,9 @@ public unsafe partial class Renderer
             fisheyeUnwrap = value;
 
             // Deliberately not skipped when it is already on. A panel that has shown video before comes
-            // back with the flag still set, and skipping the reconfigure. The geometry goes with it,
-            // so the next one arrives as a fresh switch from off to on and
+            // back with the flag still set, and skipping the reconfigure there is the difference between
+            // a panel that draws its quadrant straight away and one that has to be clicked first. The
+            // geometry goes with it, so the next one arrives as a fresh switch from off to on and
             // rebuilds the shader variant along with it.
             fisheyeView = null;
 
@@ -157,8 +158,8 @@ public unsafe partial class Renderer
     /// samples that texture through the unwrap, once per segment.
     /// </para>
     /// <para>
-    /// All of it under the render loop lock: the immediate context is not shared between threads, and
-    /// this is called from a worker. Every draw is issued before the first map, so the stall is one wait
+    /// All of it under the device and render loop locks: the immediate context is not shared between
+    /// threads, this is called from a worker, and the device can be disposed underneath it. Every draw is issued before the first map, so the stall is one wait
     /// for the GPU rather than one per segment.
     /// </para>
     /// </remarks>
@@ -167,83 +168,92 @@ public unsafe partial class Renderer
         if (segments == null || consume == null)
             return false;
 
-        lock (lockRenderLoops)
+        // Device first, render loops second - the order Dispose uses, which takes the device lock and
+        // stops the render loops from inside it. Taking them the other way round here would deadlock
+        // against a stream closing.
+        lock (lockDevice)
         {
-            try
+            if (Disposed)
+                return false;
+
+            lock (lockRenderLoops)
             {
-                if (VisibleWidth == 0 || VisibleHeight == 0)
-                    return false;
-
-                var source = GetSnapshot(VisibleWidth, VisibleHeight);
-
-                if (!RenderCurrentFrameInto(source) || !EnsureFisheyeResources(source)
-                    || fisheyeBuffer is not ID3D11Buffer buffer)
-                    return false;
-
-                // The rotation, flip and crop of the stream are already baked into the intermediate by
-                // the pass above, which went through the main vertex shader. Going through it a second
-                // time would apply them twice, so the unwrap uses the pass-through one - the same thing
-                // the subtitle pass does.
-                context.VSSetShader         (vsSimple);
-                context.PSSetShader         (fisheyePS);
-                context.PSSetConstantBuffer (2, buffer);
-                context.PSSetShaderResources(0, fisheyeSourceSrvs);
-
-                var drawn = false;
-
-                for (int i = 0; i < segments.Length; i++)
+                try
                 {
-                    if (segments[i] is not FisheyeSegment segment || segment.TargetWidth <= 0 || segment.TargetHeight <= 0)
-                        continue;
+                    if (VisibleWidth == 0 || VisibleHeight == 0)
+                        return false;
 
-                    var target = GetFisheyeTarget(i, (uint)segment.TargetWidth, (uint)segment.TargetHeight);
+                    var source = GetSnapshot(VisibleWidth, VisibleHeight);
 
-                    SetFisheyeBuffer(segment, fisheyeNoCrop, buffer);
+                    if (!RenderCurrentFrameInto(source) || !EnsureFisheyeResources(source)
+                        || fisheyeBuffer is not ID3D11Buffer buffer)
+                        return false;
 
-                    context.OMSetRenderTargets(target.rtv);
-                    context.RSSetViewport(target.view);
-                    context.Draw(6, 0);
-                    context.CopyResource(target.txtStage, target.txt);
+                    // The rotation, flip and crop of the stream are already baked into the intermediate by
+                    // the pass above, which went through the main vertex shader. Going through it a second
+                    // time would apply them twice, so the unwrap uses the pass-through one - the same thing
+                    // the subtitle pass does.
+                    context.VSSetShader         (vsSimple);
+                    context.PSSetShader         (fisheyePS);
+                    context.PSSetConstantBuffer (2, buffer);
+                    context.PSSetShaderResources(0, fisheyeSourceSrvs);
 
-                    drawn = true;
-                }
+                    var drawn = false;
 
-                // Every draw and copy is issued above before the first map below, so the wait for the
-                // GPU is one, not one per quadrant.
-                if (drawn)
                     for (int i = 0; i < segments.Length; i++)
                     {
-                        // The same test the draw loop made: a segment it skipped has no fresh pixels,
-                        // and its target may still be holding the one before.
-                        if (segments[i] is not FisheyeSegment segment
-                            || segment.TargetWidth <= 0
-                            || segment.TargetHeight <= 0
-                            || fisheyeTargets[i] is not Snapshot target)
+                        if (segments[i] is not FisheyeSegment segment || segment.TargetWidth <= 0 || segment.TargetHeight <= 0)
                             continue;
 
-                        var mapped = context.Map(target.txtStage, 0);
+                        var target = GetFisheyeTarget(i, (uint)segment.TargetWidth, (uint)segment.TargetHeight);
 
-                        try
-                        {
-                            consume(i, new FisheyeFrame(mapped.DataPointer, (int)mapped.RowPitch, (int)target.Width, (int)target.Height));
-                        }
-                        finally
-                        {
-                            context.Unmap(target.txtStage, 0);
-                        }
+                        SetFisheyeBuffer(segment, fisheyeNoCrop, buffer);
+
+                        context.OMSetRenderTargets(target.rtv);
+                        context.RSSetViewport(target.view);
+                        context.Draw(6, 0);
+                        context.CopyResource(target.txtStage, target.txt);
+
+                        drawn = true;
                     }
 
-                return drawn;
-            }
-            catch (Exception e)
-            {
-                Log.Error($"[RenderFisheyeSegments] Failed ({e.Message})");
+                    // Every draw and copy is issued above before the first map below, so the wait for the
+                    // GPU is one, not one per quadrant.
+                    if (drawn)
+                        for (int i = 0; i < segments.Length; i++)
+                        {
+                            // The same test the draw loop made: a segment it skipped has no fresh pixels,
+                            // and its target may still be holding the one before.
+                            if (segments[i] is not FisheyeSegment segment
+                                || segment.TargetWidth <= 0
+                                || segment.TargetHeight <= 0
+                                || fisheyeTargets[i] is not Snapshot target)
+                                continue;
 
-                return false;
-            }
-            finally
-            {
-                RestoreMainPipeline();
+                            var mapped = context.Map(target.txtStage, 0);
+
+                            try
+                            {
+                                consume(i, new FisheyeFrame(mapped.DataPointer, (int)mapped.RowPitch, (int)target.Width, (int)target.Height));
+                            }
+                            finally
+                            {
+                                context.Unmap(target.txtStage, 0);
+                            }
+                        }
+
+                    return drawn;
+                }
+                catch (Exception e)
+                {
+                    Log.Error($"[RenderFisheyeSegments] Failed ({e.Message})");
+
+                    return false;
+                }
+                finally
+                {
+                    RestoreMainPipeline();
+                }
             }
         }
     }

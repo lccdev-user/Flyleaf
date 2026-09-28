@@ -63,19 +63,42 @@ public unsafe partial class Renderer
     {
         var rFrame = Frames.RendererFrame;
 
-        if (rFrame == null)
+        // The caller may be a worker thread, and the device can go away underneath it while a stream
+        // is closing. Blitting on a disposed video processor is an access violation, which no managed
+        // catch would stop.
+        if (Disposed || rFrame == null)
             return false;
 
         if (VideoProcessor == VideoProcessors.D3D11)
         {
+            if (vc == null || vp == null || rFrame.VPIV == null)
+                return false;
+
+            vc.VideoProcessorGetStreamSourceRect(vp, 0, out _, out var d3srcOld);
             vc.VideoProcessorGetStreamDestRect  (vp, 0, out _, out var d3destOld);
             vc.VideoProcessorGetOutputTargetRect(vp,    out _, out var d3outOld);
+
+            // Zoom is the source rectangle on this path, and this is meant to be the whole frame. Left
+            // alone, every quadrant is unwrapped from whatever the centre cell happens to be zoomed
+            // into.
+            vc.VideoProcessorSetStreamSourceRect(vp, 0, true, new(
+                (int)crop.Left,
+                (int)crop.Top,
+                (int)(d3txtDesc.Width  - crop.Right),
+                (int)(d3txtDesc.Height - crop.Bottom)));
+
             D3Render(rFrame.VPIV, target.d3rtv, target.d3view);
+
+            vc.VideoProcessorSetStreamSourceRect(vp, 0, true, d3srcOld);
             vc.VideoProcessorSetStreamDestRect  (vp, 0, true, d3destOld);
             vc.VideoProcessorSetOutputTargetRect(vp,    true, d3outOld);
         }
         else
         {
+            if (rFrame.SRV == null)
+                return false;
+
+            // Zoom is the viewport here, and FLRender sets the target's own.
             FLRender(rFrame.SRV, target.rtv, target.view);
             context.RSSetViewport(Viewport);
         }
