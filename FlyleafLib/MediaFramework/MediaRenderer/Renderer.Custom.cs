@@ -56,8 +56,6 @@ public unsafe partial class Renderer
     internal ID3D11VideoDevice VideoDevice => vd;
     internal ID3D11VideoProcessorEnumerator VideoEnumerator => ve;
 
-    public IVideoFrameProcessor? VideoFrameProcessor { get; set; }
-
     void D3SetViewport(int width, int height, int transformedWidth, int transformedHeight)
     {   
         _transformedStream = true;
@@ -184,6 +182,12 @@ public unsafe partial class Renderer
             Math.Min(srcBottom  , _transformedHeight));
     }
 
+    /// <remarks>
+    /// Unreachable since the decode time transform went: only the GPU injector ever set
+    /// <see cref="VideoFrame.IsTransformedFrame"/>, and the fisheye unwrap is now a pixel shader that
+    /// leaves the frame alone. Kept for the moment because it is entangled with D3SetViewport and the
+    /// transformed stream viewport, which want removing in one piece rather than in passing.
+    /// </remarks>
     private void CheckFrameForTransformation(VideoFrame frame)
     {
         if (frame.IsTransformedFrame && frame.Texture?.Length > 0 && VideoProcessor is VideoProcessors.D3D11)
@@ -202,12 +206,5 @@ public unsafe partial class Renderer
         }
     }
 
-    private void CustomDispose()
-    {
-        if (VideoFrameProcessor is IDisposable processor)
-        {
-            processor.Dispose();
-        }
-    }
 }
 #nullable disable
