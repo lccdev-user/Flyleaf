@@ -13,8 +13,7 @@ namespace FlyleafLib.MediaFramework.MediaRenderer;
 /// </summary>
 /// <remarks>
 /// The caller owns the geometry - see <c>FisheyeQuadrantGeometry</c> in VlsPlayerLib, which derives
-/// these from the frame size and is held against Fisheye.Net by its tests. The renderer only draws what
-/// it is given.
+/// these from the frame size. The renderer only draws what it is given.
 /// </remarks>
 public readonly record struct FisheyeSegment(
     float CenterX,
@@ -89,13 +88,18 @@ public unsafe partial class Renderer
         get => fisheyeUnwrap;
         set
         {
-            if (fisheyeUnwrap == value)
+            // Off and staying off is the only case with nothing to do - every other stream carries an
+            // ordinary camera through here too.
+            if (!value && !fisheyeUnwrap)
                 return;
 
             fisheyeUnwrap = value;
 
-            if (!value)
-                fisheyeView = null;
+            // Deliberately not skipped when it is already on. A panel that has shown video before comes
+            // back with the flag still set, and skipping the reconfigure. The geometry goes with it,
+            // so the next one arrives as a fresh switch from off to on and
+            // rebuilds the shader variant along with it.
+            fisheyeView = null;
 
             VPRequest(VPRequestType.ReConfigVP);
         }
