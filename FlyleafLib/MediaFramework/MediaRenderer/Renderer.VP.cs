@@ -78,9 +78,7 @@ public unsafe partial class Renderer : IVP, ICustomRenderer
         if (ucfg.Pano360._enabled && canFL)
             return VideoProcessors.Flyleaf;
 
-        // So does the fisheye unwrap, and for the same reason. Keyed on the mode rather than on the
-        // geometry: the frames need shader resource views from the very first one, and the geometry is
-        // not known until one has arrived.
+        // Fisheye unwrap mode requires Flyleaf VP.
         if (fisheyeUnwrap && canFL)
             return VideoProcessors.Flyleaf;
 

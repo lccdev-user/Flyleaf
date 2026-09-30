@@ -54,18 +54,10 @@ public unsafe partial class Renderer
     /// Draws the frame currently on screen into an off-screen RGBA target, at the video's own size and
     /// with neither zoom nor pan applied. The caller holds <c>lockRenderLoops</c>.
     /// </summary>
-    /// <remarks>
-    /// Which video processor is active decides how: the D3D11 one owns the frame as a
-    /// VideoProcessorInputView, which a pixel shader cannot read, so it blits through the processor with
-    /// its rectangles put back afterwards.
-    /// </remarks>
     bool RenderCurrentFrameInto(Snapshot target)
     {
         var rFrame = Frames.RendererFrame;
-
-        // The caller may be a worker thread, and the device can go away underneath it while a stream
-        // is closing. Blitting on a disposed video processor is an access violation, which no managed
-        // catch would stop.
+                
         if (Disposed || rFrame == null)
             return false;
 
@@ -77,10 +69,7 @@ public unsafe partial class Renderer
             vc.VideoProcessorGetStreamSourceRect(vp, 0, out _, out var d3srcOld);
             vc.VideoProcessorGetStreamDestRect  (vp, 0, out _, out var d3destOld);
             vc.VideoProcessorGetOutputTargetRect(vp,    out _, out var d3outOld);
-
-            // Zoom is the source rectangle on this path, and this is meant to be the whole frame. Left
-            // alone, every quadrant is unwrapped from whatever the centre cell happens to be zoomed
-            // into.
+                        
             vc.VideoProcessorSetStreamSourceRect(vp, 0, true, new(
                 (int)crop.Left,
                 (int)crop.Top,

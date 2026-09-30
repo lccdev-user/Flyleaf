@@ -25,13 +25,6 @@ public unsafe partial class Renderer
     /// <summary>
     /// Raised on the render thread with the frame that has just been put on screen.
     /// </summary>
-    /// <remarks>
-    /// Decoding order and display order are not the same thing: reverse playback decodes a GOP forwards
-    /// and then shows it backwards (see VideoDecoder.RunInternalReverse). Anything deriving a second
-    /// picture from the frame - the fisheye quadrants - has to follow this, not the decoder, or it plays
-    /// a GOP forwards while the video plays it back. Handlers run on the render thread and must not
-    /// block it.
-    /// </remarks>
     public event Action<VideoFrame>? FramePresented;
     
     public EventHandler<ID2D1DeviceContext>? Overview2DInitialized;
@@ -182,12 +175,6 @@ public unsafe partial class Renderer
             Math.Min(srcBottom  , _transformedHeight));
     }
 
-    /// <remarks>
-    /// Unreachable since the decode time transform went: only the GPU injector ever set
-    /// <see cref="VideoFrame.IsTransformedFrame"/>, and the fisheye unwrap is now a pixel shader that
-    /// leaves the frame alone. Kept for the moment because it is entangled with D3SetViewport and the
-    /// transformed stream viewport, which want removing in one piece rather than in passing.
-    /// </remarks>
     private void CheckFrameForTransformation(VideoFrame frame)
     {
         if (frame.IsTransformedFrame && frame.Texture?.Length > 0 && VideoProcessor is VideoProcessors.D3D11)

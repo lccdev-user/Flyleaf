@@ -30,12 +30,7 @@ public unsafe partial class Renderer
                 startIdleLoop   = true;
             }
         }
-
-        // This path puts a frame on screen just as RenderPlay does - frame stepping, seeking and the
-        // first frame after buffering all come through here - so anything deriving a second picture from
-        // it has to hear about it, or it is left showing whatever was there before.
-        // Outside the lock: a handler that wants the frame back off the renderer would otherwise be
-        // taking this same lock from inside it.
+        
         if (frame != null)
             FramePresented?.Invoke(frame);
 
@@ -222,8 +217,6 @@ public unsafe partial class Renderer
                 Frames.SetRendererFrame(frame);
             }
 
-            // Outside the lock: a handler that wants the frame back off the renderer would otherwise be
-            // taking this same lock from inside it.
             FramePresented?.Invoke(frame);
 
             return true;

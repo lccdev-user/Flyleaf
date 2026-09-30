@@ -32,14 +32,6 @@ internal sealed class WriteableBitmapPresenter : IVideoPresenter
     /// <summary>
     /// Prepares a bitmap for the new size, without putting it on screen yet.
     /// </summary>
-    /// <remarks>
-    /// A fresh WriteableBitmap is empty, and the provider drops its frame on a resize, so the earliest
-    /// this one can hold anything is the next publish - which arrives a composition frame or more later,
-    /// because the swap-chain re-presents on the render thread. Showing it straight away therefore left
-    /// the video blank for most frames of a continuous resize, which reads as flicker. The bitmap already
-    /// on screen is kept and simply stretched until the new one has content, so the picture never goes
-    /// away; the stretch lasts a frame or two, so it is not visible.
-    /// </remarks>
     public void Resize(int pixelWidth, int pixelHeight)
     {
         if (pixelWidth <= 0 || pixelHeight <= 0)

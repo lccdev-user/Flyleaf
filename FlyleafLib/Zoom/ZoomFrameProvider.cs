@@ -33,11 +33,6 @@ public sealed class ZoomFrameProvider : VideoFrameProviderBase
     }
 
     // Render thread: draw the minimap, then copy it into the base frame texture.
-    //
-    // The copy happens inside RenderMinimapInto's callback, so it runs while the renderer still holds the
-    // lock that guards the minimap texture. Taking the texture out first and copying afterwards left a
-    // window in which an unbind or a device change could dispose it in between. PublishFrame's own lock
-    // is taken in here, never around this call - see the lock order noted on RenderMinimapInto.
     private void OnFrameReady() =>
         _renderer?.RenderMinimapInto(minimap => PublishFrame(target =>
         {
