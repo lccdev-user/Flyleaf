@@ -2,12 +2,7 @@
 #nullable enable
 public interface ICustomVideoStream
 {
-    event Action<long>? StartTimeChanged;
     event Action<long>? CurrentTimeChanged;
-    /// <summary>
-    /// The real start date of the video archive. The default is minus 30 days before the current date.
-    /// </summary>
-    DateTime StartRealTime { get; }
     /// <summary>
     /// Target timestamp in milliseconds for video frame timestamp search operations
     /// </summary>
