@@ -7,13 +7,11 @@ public unsafe static class DemuxerExtensions
 {
     public static bool IsCustomStream(this Demuxer demuxer) => demuxer.CustomIOContext.stream is ICustomVideoStream stream;
     public static bool IsCustomStreamLive(this Demuxer demuxer) => demuxer.IsCustomStream() ? demuxer.CustomIOContext.stream.IsCustomStreamLive() : false;
-    public static long FirstCustomTimestampInGoP(this Demuxer demuxer, VideoTimeUnit unit) => demuxer.IsCustomStream() ? demuxer.CustomIOContext.stream.FirstTimestampInGoP(unit) : 0;
     public static long StartCustomTimestamp(this Demuxer demuxer, VideoTimeUnit unit) => demuxer.IsCustomStream() ? demuxer.CustomIOContext.stream.StartTimestamp (unit) : 0;
     public static long LastCustomTimestamp(this Demuxer demuxer, VideoTimeUnit unit) => demuxer.IsCustomStream() ? demuxer.CustomIOContext.stream.LastTimestamp(unit) : 0;
     public static long CurCustomTime(this Demuxer demuxer, VideoTimeUnit unit) => demuxer.IsCustomStream() ? demuxer.CustomIOContext.stream.CurTime(unit) : 0;
     public static long PictureGroupTime(this Demuxer demuxer, VideoTimeUnit unit) => demuxer.IsCustomStream() ? demuxer.CustomIOContext.stream.PictureGroupTime(unit) : 0;
     public static long ExpectedCustomTimestamp(this Demuxer demuxer, VideoTimeUnit unit) => demuxer.IsCustomStream() ? demuxer.CustomIOContext.stream.ExpectedTimestamp (unit) : 0;
-    public static int ExpectedCustomFrameIndex(this Demuxer demuxer) => demuxer.IsCustomStream() ? demuxer.CustomIOContext.stream.ExpectedFrameIndex() : 0;
     public static long CustomDuration(this Demuxer demuxer) => demuxer.IsCustomStream() ? demuxer.CustomIOContext.stream.GetDuration() : 40;
     public static int CustomFramePerSecond(this Demuxer demuxer) => demuxer.IsCustomStream() ? demuxer.CustomIOContext.stream.GetFramesPerSecond() : 25;
     public static void UpdateCustomDuration(this Demuxer demuxer)
@@ -163,11 +161,6 @@ public unsafe static class DemuxerExtensions
     {
         if (demuxer.CustomIOContext.stream is ICustomVideoStream custom)
             custom.Mode = playMode;
-    }
-    public static void SetPictureGroupFrameIndex(this Demuxer demuxer, int frameIndex)
-    {
-        if (demuxer.CustomIOContext.stream is ICustomVideoStream custom)
-            custom.PictureGroupFrameIndex = frameIndex;
     }
     public static void UpdateCustomRenderedTimestamp(this Demuxer demuxer, long frameTicks)
     {

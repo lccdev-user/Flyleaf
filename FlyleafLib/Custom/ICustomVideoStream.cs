@@ -12,10 +12,6 @@ public interface ICustomVideoStream
     /// </summary>
     long StartTimestamp { get; }
     /// <summary>
-    /// The first timestamp of the video response (in milliseconds).
-    /// </summary>
-    long FirstTimestampInGoP { get; }
-    /// <summary>
     ///
     /// </summary>
     long CurrentTimestamp { get; set; }
@@ -34,10 +30,8 @@ public interface ICustomVideoStream
     Double FrameDuration { get; }
     int FramesPerSecond { get; }
     long PictureGroupTimeStamp { get; }
-    double PictureGroupFrameDuration { get; }
     int PictureGroupFrameIndex { get; set; }
     bool IsLive { get; }
-    int ExpectedFrameIndex { get; }
     long FrameCount { get; set; }
     bool IsPlayStopMode { get; }
     bool SearchCompleted { get; set; }
