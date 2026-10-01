@@ -85,6 +85,34 @@ inline float2 PanoProject(float2 uv)
 }
 #endif
 
+#if defined(dFisheye)
+cbuffer FisheyeConfig : register(b2)
+{
+    float4 fisheyeArc;      // angle at the left edge, angle across, outer radius, inner radius
+    float4 fisheyeSource;   // centre x, centre y, 1 / picture width, 1 / picture height
+    float4 fisheyeCrop;     // the visible picture inside the texture: left, top, right, bottom
+};
+
+// One quarter of a linear polar unwrap: X runs along the angle, Y inwards from the rim. The same
+// mapping Fisheye.Net performs with OpenCV warpPolar, and FisheyeQuadrantGeometry holds the constants
+// and is tested against the library.
+inline float2 FisheyeProject(float2 uv)
+{
+    // Back to where this pixel is on the output. The vertex shader has already mapped the quad into the
+    // visible rectangle of the texture - coded padding and any user crop - and the unwrap needs to know
+    // where it is on the picture being drawn, not where it landed in the texture.
+    float2 span = max(fisheyeCrop.zw - fisheyeCrop.xy, 1e-6);
+    float2 quad = (uv - fisheyeCrop.xy) / span;
+
+    float angle    = fisheyeArc.x + quad.x * fisheyeArc.y;
+    float radius   = lerp(fisheyeArc.z, fisheyeArc.w, quad.y);
+    float2 picture = (fisheyeSource.xy + radius * float2(cos(angle), sin(angle))) * fisheyeSource.zw;
+
+    // And into the texture again, the way the vertex shader would have.
+    return lerp(fisheyeCrop.xy, fisheyeCrop.zw, picture);
+}
+#endif
+
 inline float3 LinearToSRGB(float3 c)
 {
     float3 srgbLo = c * 12.92;
@@ -312,6 +340,9 @@ float4 main(PSInput input) : SV_TARGET
     float4 color;
 #if defined(dPano360)
     input.Texture = PanoProject(input.Texture);
+#endif
+#if defined(dFisheye)
+    input.Texture = FisheyeProject(input.Texture);
 #endif
 "u8;
 

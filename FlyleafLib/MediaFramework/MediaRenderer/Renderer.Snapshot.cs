@@ -39,24 +39,8 @@ public unsafe partial class Renderer
         {
             lock (lockRenderLoops)
             {
-                var rFrame = Frames.RendererFrame;
-
-                if (rFrame == null)
+                if (!RenderCurrentFrameInto(snapshot))
                     return null;
-
-                if (VideoProcessor == VideoProcessors.D3D11)
-                {
-                    vc.VideoProcessorGetStreamDestRect  (vp, 0, out _, out var d3destOld);
-                    vc.VideoProcessorGetOutputTargetRect(vp,    out _, out var d3outOld);
-                    D3Render(rFrame.VPIV, snapshot.d3rtv, snapshot.d3view);
-                    vc.VideoProcessorSetStreamDestRect  (vp, 0, true, d3destOld);
-                    vc.VideoProcessorSetOutputTargetRect(vp,    true, d3outOld);
-                }
-                else
-                {
-                    FLRender(rFrame.SRV, snapshot.rtv, snapshot.view);
-                    context.RSSetViewport(Viewport);
-                }
             }
 
             context.CopyResource(snapshot.txtStage, snapshot.txt);
@@ -64,6 +48,51 @@ public unsafe partial class Renderer
             return snapshot.txtStage;
         }
         catch { return null; }
+    }
+
+    /// <summary>
+    /// Draws the frame currently on screen into an off-screen RGBA target, at the video's own size and
+    /// with neither zoom nor pan applied. The caller holds <c>lockRenderLoops</c>.
+    /// </summary>
+    bool RenderCurrentFrameInto(Snapshot target)
+    {
+        var rFrame = Frames.RendererFrame;
+                
+        if (Disposed || rFrame == null)
+            return false;
+
+        if (VideoProcessor == VideoProcessors.D3D11)
+        {
+            if (vc == null || vp == null || rFrame.VPIV == null)
+                return false;
+
+            vc.VideoProcessorGetStreamSourceRect(vp, 0, out _, out var d3srcOld);
+            vc.VideoProcessorGetStreamDestRect  (vp, 0, out _, out var d3destOld);
+            vc.VideoProcessorGetOutputTargetRect(vp,    out _, out var d3outOld);
+                        
+            vc.VideoProcessorSetStreamSourceRect(vp, 0, true, new(
+                (int)crop.Left,
+                (int)crop.Top,
+                (int)(d3txtDesc.Width  - crop.Right),
+                (int)(d3txtDesc.Height - crop.Bottom)));
+
+            D3Render(rFrame.VPIV, target.d3rtv, target.d3view);
+
+            vc.VideoProcessorSetStreamSourceRect(vp, 0, true, d3srcOld);
+            vc.VideoProcessorSetStreamDestRect  (vp, 0, true, d3destOld);
+            vc.VideoProcessorSetOutputTargetRect(vp,    true, d3outOld);
+        }
+        else
+        {
+            if (rFrame.SRV == null)
+                return false;
+
+            // Zoom is the viewport here, and FLRender sets the target's own.
+            FLRender(rFrame.SRV, target.rtv, target.view);
+            context.RSSetViewport(Viewport);
+        }
+
+        return true;
     }
 
     public Bitmap TakeSnapshot(uint width = 0, uint height = 0)
@@ -140,7 +169,14 @@ public unsafe partial class Renderer
     }
     public Bitmap GetBitmap(ID3D11Texture2D txtStage)
     {
-        var bmp     = new Bitmap((int)txtStage.Description.Width, (int)txtStage.Description.Height);
+        var bmp = new Bitmap((int)txtStage.Description.Width, (int)txtStage.Description.Height);
+        CopyToBitmap(txtStage, bmp);
+
+        return bmp;
+    }
+
+    void CopyToBitmap(ID3D11Texture2D txtStage, Bitmap bmp)
+    {
         var db      = context.Map(txtStage, 0);
         var bmpData = bmp.LockBits(new(0, 0, bmp.Width, bmp.Height), ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
 
@@ -162,8 +198,6 @@ public unsafe partial class Renderer
 
         bmp.UnlockBits(bmpData);
         context.Unmap(txtStage, 0);
-
-        return bmp;
     }
     public BitmapSource GetBitmapSource(ID3D11Texture2D txtStage)
     {

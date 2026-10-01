@@ -33,13 +33,8 @@ public sealed class ZoomFrameProvider : VideoFrameProviderBase
     }
 
     // Render thread: draw the minimap, then copy it into the base frame texture.
-    private void OnFrameReady()
-    {
-        var minimap = _renderer?.RenderMinimap();
-        if (minimap == null)
-            return;
-
-        PublishFrame(target =>
+    private void OnFrameReady() =>
+        _renderer?.RenderMinimapInto(minimap => PublishFrame(target =>
         {
             var td = target.Description;
             var sd = minimap.Description;
@@ -48,8 +43,7 @@ public sealed class ZoomFrameProvider : VideoFrameProviderBase
 
             _player.Renderer.DeviceContext.CopyResource(target, minimap);
             return true;
-        });
-    }
+        }));
 
     protected override void OnResize(int width, int height)
         => _renderer?.UpdateSize(width, height);

@@ -134,22 +134,37 @@ float4 main(PSIn i) : SV_TARGET
         /// <summary>Initializes the D3D11 pipeline + frame source on the player render device.</summary>
         public void Initialize()
         {
-            if (IsInitialized || _disposed)
-                return;
+            DecodedFrameSource stale = null;
 
-            _device = _player.Renderer.Device;
-            _context = _player.Renderer.DeviceContext;
-            if (_device is null)
-                return;
+            lock (_lockRecreatedResources)
+            {
+                if (IsInitialized || _disposed)
+                    return;
 
-            CompileShaders();
-            CreateConstantBuffer();
-            CreateSamplerAndStates();
+                _device = _player.Renderer.Device;
+                _context = _player.Renderer.DeviceContext;
 
-            _frameSource = new DecodedFrameSource(_player.Renderer);
-            _frameSource.FrameReady += OnFrameReady;
+                if (_device is null)
+                    return;
 
-            IsInitialized = true;
+                CompileShaders();
+                CreateConstantBuffer();
+                CreateSamplerAndStates();
+
+                // Re-initializing after a device change would otherwise leave the previous source alive
+                // and still subscribed, driving this renderer from a device it no longer has.
+                stale = _frameSource;
+                if (stale != null)
+                    stale.FrameReady -= OnFrameReady;
+
+                _frameSource = new DecodedFrameSource(_player.Renderer);
+                _frameSource.FrameReady += OnFrameReady;
+
+                IsInitialized = true;
+            }
+
+            // Outside the lock: a frame source can be waiting on a render callback that wants it.
+            stale?.Dispose();
 
             if (_player is ICustomPlayer custom)
                 custom.OverviewRenderer = this;
@@ -158,28 +173,31 @@ float4 main(PSIn i) : SV_TARGET
         private void OnFrameReady() => FrameReady?.Invoke();
 
         /// <summary>
-        /// Renders the minimap into the owned render-device texture and returns it
-        /// (null if nothing to draw). Call on the render thread.
+        /// Renders the minimap into the owned render-device texture and hands it to
+        /// <paramref name="consume"/>, returning what the consumer returned. Call on the render thread.
         /// </summary>
-        public ID3D11Texture2D RenderMinimap()
+        public bool RenderMinimapInto(Func<ID3D11Texture2D, bool> consume)
         {
-            if (!IsInitialized || _disposed || _device is null)
-                return null;
+            if (consume is null || !IsInitialized || _disposed || _device is null)
+                return false;
 
             CheckDeviceChanged();
 
             var srv = _frameSource?.FrameSrv;
             if (srv == null)
-                return null;
+                return false;
 
             _videoWidth = _frameSource.VideoWidth;
             _videoHeight = _frameSource.VideoHeight;
 
-            if (!EnsureMinimapTexture(ControlWidth, ControlHeight))
-                return null;
-
             lock (_lockRecreatedResources)
             {
+                if (!IsInitialized || _disposed || _device is null)
+                    return false;
+
+                if (!EnsureMinimapTexture(ControlWidth, ControlHeight))
+                    return false;
+
                 if (_showZoomBox)
                     UpdateConstantBuffer();
 
@@ -201,9 +219,10 @@ float4 main(PSIn i) : SV_TARGET
 
                 _context.OMSetRenderTargets((ID3D11RenderTargetView)null);
                 _context.PSSetShaderResource(0, null);
-            }
 
-            return _minimapTex;
+                // Still under the lock: the texture cannot be recreated or disposed under the consumer.
+                return consume(_minimapTex);
+            }
         }
 
         private void CheckDeviceChanged()
@@ -252,6 +271,7 @@ float4 main(PSIn i) : SV_TARGET
             });
         }
 
+        /// <summary>Caller must hold <see cref="_lockRecreatedResources"/>.</summary>
         private bool EnsureMinimapTexture(int width, int height)
         {
             if (width <= 0 || height <= 0)
@@ -262,19 +282,40 @@ float4 main(PSIn i) : SV_TARGET
 
             _minimapRtv?.Dispose(); _minimapRtv = null;
             _minimapTex?.Dispose(); _minimapTex = null;
+            _minimapWidth = _minimapHeight = 0;
 
-            _minimapTex = _device.CreateTexture2D(new Texture2DDescription
+            // Built into locals and published as a pair, so a half-built minimap is never visible and
+            // the render target view is never asked for from a texture that is not there.
+            ID3D11Texture2D tex = null;
+            ID3D11RenderTargetView rtv = null;
+
+            try
             {
-                Width = (uint)width,
-                Height = (uint)height,
-                MipLevels = 1,
-                ArraySize = 1,
-                Format = Format.B8G8R8A8_UNorm,
-                SampleDescription = new SampleDescription(1, 0),
-                Usage = ResourceUsage.Default,
-                BindFlags = BindFlags.RenderTarget | BindFlags.ShaderResource
-            });
-            _minimapRtv = _device.CreateRenderTargetView(_minimapTex);
+                tex = _device.CreateTexture2D(new Texture2DDescription
+                {
+                    Width = (uint)width,
+                    Height = (uint)height,
+                    MipLevels = 1,
+                    ArraySize = 1,
+                    Format = Format.B8G8R8A8_UNorm,
+                    SampleDescription = new SampleDescription(1, 0),
+                    Usage = ResourceUsage.Default,
+                    BindFlags = BindFlags.RenderTarget | BindFlags.ShaderResource
+                });
+                rtv = _device.CreateRenderTargetView(tex);
+            }
+            catch (Exception e)
+            {
+                // The minimap is an overlay: failing to build it skips a frame of it, it does not take
+                // the render thread down with it.
+                Log.Warn($"Minimap texture {width}x{height} could not be created: {e.Message}");
+                rtv?.Dispose();
+                tex?.Dispose();
+                return false;
+            }
+
+            _minimapTex = tex;
+            _minimapRtv = rtv;
             _minimapWidth = width;
             _minimapHeight = height;
 
@@ -319,25 +360,28 @@ float4 main(PSIn i) : SV_TARGET
 
             LocalDispose();
         }
-
+        
         private void LocalDispose()
         {
-            IsInitialized = false;
+            lock (_lockRecreatedResources)
+            {
+                IsInitialized = false;
 
-            _minimapRtv?.Dispose(); _minimapRtv = default;
-            _minimapTex?.Dispose(); _minimapTex = default;
-            _minimapWidth = _minimapHeight = 0;
+                _minimapRtv?.Dispose(); _minimapRtv = default;
+                _minimapTex?.Dispose(); _minimapTex = default;
+                _minimapWidth = _minimapHeight = 0;
 
-            _sampler?.Dispose(); _sampler = default;
-            _rasterizer?.Dispose(); _rasterizer = default;
-            _cbViewport?.Dispose(); _cbViewport = default;
-            _blend?.Dispose(); _blend = default;
-            _vertexShader?.Dispose(); _vertexShader = default;
-            _pixelShader?.Dispose(); _pixelShader = default;
-            _pixelShaderWithZoomBox?.Dispose(); _pixelShaderWithZoomBox = default;
+                _sampler?.Dispose(); _sampler = default;
+                _rasterizer?.Dispose(); _rasterizer = default;
+                _cbViewport?.Dispose(); _cbViewport = default;
+                _blend?.Dispose(); _blend = default;
+                _vertexShader?.Dispose(); _vertexShader = default;
+                _pixelShader?.Dispose(); _pixelShader = default;
+                _pixelShaderWithZoomBox?.Dispose(); _pixelShaderWithZoomBox = default;
 
-            _context = default;
-            _device = default;
+                _context = default;
+                _device = default;
+            }
         }
 
         internal void UpdateSize(int actualWidth, int actualHeight)
@@ -346,11 +390,15 @@ float4 main(PSIn i) : SV_TARGET
                 return;
 
             Log.Debug($"UpdateSize({actualWidth}, {actualHeight})");
-            ControlWidth = actualWidth;
-            ControlHeight = actualHeight;
-            // _minimapTex is recreated lazily on the next RenderMinimap.
-            _minimapWidth = _minimapHeight = 0;
-            SetViewport(ControlWidth, ControlHeight);
+
+            lock (_lockRecreatedResources)
+            {
+                ControlWidth = actualWidth;
+                ControlHeight = actualHeight;
+                // _minimapTex is recreated lazily on the next RenderMinimapInto.
+                _minimapWidth = _minimapHeight = 0;
+                SetViewport(ControlWidth, ControlHeight);
+            }
         }
 
         private void SetViewport(int width, int height)

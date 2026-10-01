@@ -15,6 +15,8 @@ public unsafe partial class Renderer
 
     internal void RenderRequest(VideoFrame frame = null, bool forceClear = false)
     {
+        bool startIdleLoop = false;
+
         lock (lockRenderLoops)
         {
             renderRequestAt = DateTime.UtcNow.Ticks;
@@ -22,13 +24,18 @@ public unsafe partial class Renderer
             if ((frame != null || forceClear))
                 Frames.SetRendererFrame(frame);
 
-            if (!SwapChain.CanPresent || !canIdle || isIdleRunning)
-                return;
-
-            isIdleRunning = true;
+            if (SwapChain.CanPresent && canIdle && !isIdleRunning)
+            {
+                isIdleRunning   = true;
+                startIdleLoop   = true;
+            }
         }
+        
+        if (frame != null)
+            FramePresented?.Invoke(frame);
 
-        Task.Run(RenderIdleLoop);
+        if (startIdleLoop)
+            Task.Run(RenderIdleLoop);
     }
     internal void RenderIdleStart(bool force = false)
     {
@@ -209,6 +216,8 @@ public unsafe partial class Renderer
 
                 Frames.SetRendererFrame(frame);
             }
+
+            FramePresented?.Invoke(frame);
 
             return true;
         }

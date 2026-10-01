@@ -21,6 +21,11 @@ public unsafe partial class Renderer
     private int _transformedWidth;
     private int _transformedHeight;
     public event Action<VideoFrame>? RenderChild;
+
+    /// <summary>
+    /// Raised on the render thread with the frame that has just been put on screen.
+    /// </summary>
+    public event Action<VideoFrame>? FramePresented;
     
     public EventHandler<ID2D1DeviceContext>? Overview2DInitialized;
     public EventHandler<ID2D1DeviceContext>? Overview2DDisposing;
@@ -43,8 +48,6 @@ public unsafe partial class Renderer
     internal ID3D11DeviceContext DeviceContext => context;
     internal ID3D11VideoDevice VideoDevice => vd;
     internal ID3D11VideoProcessorEnumerator VideoEnumerator => ve;
-
-    public IVideoFrameProcessor? VideoFrameProcessor { get; set; }
 
     void D3SetViewport(int width, int height, int transformedWidth, int transformedHeight)
     {   
@@ -190,12 +193,5 @@ public unsafe partial class Renderer
         }
     }
 
-    private void CustomDispose()
-    {
-        if (VideoFrameProcessor is IDisposable processor)
-        {
-            processor.Dispose();
-        }
-    }
 }
 #nullable disable
