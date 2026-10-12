@@ -32,7 +32,6 @@ public interface ICustomVideoStream
     long PictureGroupTimeStamp { get; }
     int PictureGroupFrameIndex { get; set; }
     bool IsLive { get; }
-    long FrameCount { get; set; }
     bool IsPlayStopMode { get; }
     bool SearchCompleted { get; set; }
     bool IsBufferReady { get; }

@@ -8,7 +8,6 @@ public unsafe static class DemuxerExtensions
     public static bool IsCustomStream(this Demuxer demuxer) => demuxer.CustomIOContext.stream is ICustomVideoStream stream;
     public static bool IsCustomStreamLive(this Demuxer demuxer) => demuxer.IsCustomStream() ? demuxer.CustomIOContext.stream.IsCustomStreamLive() : false;
     public static long StartCustomTimestamp(this Demuxer demuxer, VideoTimeUnit unit) => demuxer.IsCustomStream() ? demuxer.CustomIOContext.stream.StartTimestamp (unit) : 0;
-    public static long LastCustomTimestamp(this Demuxer demuxer, VideoTimeUnit unit) => demuxer.IsCustomStream() ? demuxer.CustomIOContext.stream.LastTimestamp(unit) : 0;
     public static long CurCustomTime(this Demuxer demuxer, VideoTimeUnit unit) => demuxer.IsCustomStream() ? demuxer.CustomIOContext.stream.CurTime(unit) : 0;
     public static long PictureGroupTime(this Demuxer demuxer, VideoTimeUnit unit) => demuxer.IsCustomStream() ? demuxer.CustomIOContext.stream.PictureGroupTime(unit) : 0;
     public static long ExpectedCustomTimestamp(this Demuxer demuxer, VideoTimeUnit unit) => demuxer.IsCustomStream() ? demuxer.CustomIOContext.stream.ExpectedTimestamp (unit) : 0;
@@ -18,17 +17,6 @@ public unsafe static class DemuxerExtensions
     {
         if (demuxer.CustomIOContext.stream is ICustomVideoStream custom)
             demuxer.Duration = Convert.ToInt64(custom.FrameDuration);
-    }
-    public static long CustomFrameCount(this Demuxer demuxer) => demuxer.IsCustomStream() ? demuxer.CustomIOContext.stream.FrameCount() : 0;
-    public static void AddCustomFrameCount(this Demuxer demuxer)
-    {
-        if (demuxer.CustomIOContext.stream is ICustomVideoStream custom)
-            custom.FrameCount++;
-    }
-    public static void ResetCustomFrameCount(this Demuxer demuxer)
-    {
-        if (demuxer.CustomIOContext.stream is ICustomVideoStream custom)
-            custom.FrameCount = 0;
     }
     public static bool IsCustomPlayStopMode(this Demuxer demuxer) => demuxer.IsCustomStream() ? demuxer.CustomIOContext.stream.IsCustomPlayStopMode() : false;
     /// <summary>
@@ -157,11 +145,6 @@ public unsafe static class DemuxerExtensions
     }
     public static bool IsVideoBufferReady(this Demuxer demuxer) => demuxer.IsCustomStream() ? demuxer.CustomIOContext.stream.IsBufferReady() : false;
 
-    public static void SetPlayMode(this Demuxer demuxer, int playMode)
-    {
-        if (demuxer.CustomIOContext.stream is ICustomVideoStream custom)
-            custom.Mode = playMode;
-    }
     public static void UpdateCustomRenderedTimestamp(this Demuxer demuxer, long frameTicks)
     {
         if (demuxer.CustomIOContext.stream is not ICustomVideoStream stream)

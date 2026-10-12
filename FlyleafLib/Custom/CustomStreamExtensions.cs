@@ -8,13 +8,6 @@ public static class CustomStreamExtensions
         VideoTimeUnit.Ticks => custom.StartTimestamp * Ticks.InOneMillisecond,
         _ => custom.StartTimestamp,
     };
-    
-    public static long LastTimestamp(this Stream stream,  VideoTimeUnit timeUnit = VideoTimeUnit.Milliseconds) => stream is not ICustomVideoStream custom ? 0 : timeUnit switch
-    {
-        VideoTimeUnit.Microseconds => custom.LastTimestamp * Microseconds.InOneMillisecond,
-        VideoTimeUnit.Ticks => custom.LastTimestamp * Ticks.InOneMillisecond,
-        _ => custom.LastTimestamp,
-    };
 
     public static long CurTime(this Stream stream, VideoTimeUnit timeUnit = VideoTimeUnit.Milliseconds)
     {
@@ -75,8 +68,6 @@ public static class CustomStreamExtensions
     public static bool IsCustomStreamLive(this Stream stream) => stream is not ICustomVideoStream custom ? false : custom.IsLive;
     public static bool IsCustomStream(this Stream stream) => stream is ICustomVideoStream;
 
-    public static long FrameCount(this Stream stream) => stream is ICustomVideoStream custom ? custom.FrameCount : 0;
     public static bool IsCustomPlayStopMode(this Stream stream) => stream is ICustomVideoStream custom ? custom.IsPlayStopMode : false;
     public static bool IsBufferReady(this Stream stream) => stream is ICustomVideoStream custom ? custom.IsBufferReady : true;
-    public static void SetPlayMode(this Stream stream, int PlayMode) { if (stream is ICustomVideoStream custom) custom.Mode = PlayMode; }
 }

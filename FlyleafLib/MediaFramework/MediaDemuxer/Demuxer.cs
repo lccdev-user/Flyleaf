@@ -1056,16 +1056,9 @@ public unsafe class Demuxer : RunThreadBase
                 {
                     if (CanDebug) Log.Debug($"[Seek({(forward ? "->" : "<-")})] Requested at {new TimeSpan(ticks)}");
 
+                    // A custom stream is addressed by time, in either direction
                     if (CustomIOContext.stream is ICustomVideoStream)
-                    {
-                        if (!forward)
-                        {
-                            CustomIOContext.stream.SetPlayMode(2);
-                            ret = CustomIOContext.stream.Seek(this.LastCustomTimestamp(VideoTimeUnit.Milliseconds), SeekOrigin.End) > 0 ? 0 : AVERROR_EOF;
-                        }
-                        else
-                            ret = CustomIOContext.stream.Seek(ticks / 10000, SeekOrigin.Begin) >= 0 ? 0 : AVERROR_EOF;
-                    }
+                        ret = CustomIOContext.stream.Seek(ticks / 10000, SeekOrigin.Begin) >= 0 ? 0 : AVERROR_EOF;
                     else
                         ret = ticks == StartTime // we should also call this if we seek anywhere within the first Gop
                             ? avformat_seek_file(fmtCtx, -1, 0, 0, 0, 0)
@@ -2004,22 +1997,6 @@ public unsafe class Demuxer : RunThreadBase
                 }
 
                 return ret;
-            }
-
-            if (this.IsCustomPlayStopMode())
-            {
-                if (packet->flags.HasFlag(PktFlags.Key) || this.CustomFrameCount() > 0)
-                {
-                    long frameDuration = this.CustomDuration() * 1000;
-                    long frameTime = this.CustomFrameCount() * frameDuration;
-                    packet->pts = frameTime / VideoStream.AVStream->time_base.Num;
-                    packet->duration = frameDuration;
-                    packet->dts = AV_NOPTS_VALUE;
-                    this.AddCustomFrameCount();
-
-                    if (CanDebug)
-                        Log.Debug($"time {frameTime}  | frm/s: {this.CustomFramePerSecond()} | frmDur: {Utils.TicksToTime(frameDuration * 10)}, count {this.CustomFrameCount()}, time {Utils.TicksToTime(frameTime * 10)}");
-                }
             }
 
             if (streamIndex != -1)
