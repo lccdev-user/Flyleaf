@@ -215,15 +215,20 @@ public sealed class ZoomOverviewControl : FrameworkElement, IDisposable
         ReleaseMouseCapture();
     }
 
+    /// <summary>
+    /// The unzoomed geometry the pan range is built from, taken once per drag gesture.
+    /// </summary>
+    /// <remarks>    
     private void CaptureDragBaseline()
     {
-        var vp = _player.Config.Video;
-        var viewport = _player.Renderer.Viewport;
+        var renderer = _player.Renderer;
 
-        // Calculate the baseline viewport dimensions by inverting the zoomed state
-        _dragBaselineValid = viewport.Width > 0 && viewport.Height > 0
-            && PanBoundsCalculator.TryInvertBaseline(viewport.X, viewport.Width, vp.Zoom / 100.0, vp.ZoomCenter.X, vp.PanXOffset, out _dragUnzoomedWidth, out _dragBaselineX)
-            && PanBoundsCalculator.TryInvertBaseline(viewport.Y, viewport.Height, vp.Zoom / 100.0, vp.ZoomCenter.Y, vp.PanYOffset, out _dragUnzoomedHeight, out _dragBaselineY);
+        _dragUnzoomedWidth  = renderer.ControlWidth  - renderer.SideXPixels;
+        _dragBaselineX      = renderer.SideXPixels / 2.0;
+        _dragUnzoomedHeight = renderer.ControlHeight - renderer.SideYPixels;
+        _dragBaselineY      = renderer.SideYPixels / 2.0;
+
+        _dragBaselineValid = _dragUnzoomedWidth > 0 && _dragUnzoomedHeight > 0;
     }
 
     private void PanToPosition(Point pos)
@@ -232,8 +237,7 @@ public sealed class ZoomOverviewControl : FrameworkElement, IDisposable
             return;
 
         var vp = _player.Config.Video;
-        double u = Math.Clamp(pos.X / ActualWidth, 0, 1);
-        double v = Math.Clamp(pos.Y / ActualHeight, 0, 1);
+        var (u, v) = PictureFraction(pos);
 
         var zoom = vp.Zoom / 100.0;
         var center = vp.ZoomCenter;
@@ -243,8 +247,24 @@ public sealed class ZoomOverviewControl : FrameworkElement, IDisposable
         // min and max values are used because a non-standard zoom center can make left and right margins asymmetrical
         var targetX = maxX - u * (maxX - minX);
         var targetY = maxY - v * (maxY - minY);
+
         UI(() => RaiseEvent(new ZoomOverviewPanRequestedEventArgs(PanRequestedEvent, this, targetX, targetY)));
     }
+
+    /// <summary>Where the cursor sits in the picture, 0..1 on each axis.</summary>    
+    private (double U, double V) PictureFraction(Point pos)
+    {
+        var scaleX = MapScale(SideX + VideoWidth, ActualWidth);
+        var scaleY = MapScale(SideY + VideoHeight, ActualHeight);
+
+        return (
+            PanBoundsCalculator.OverviewFraction(pos.X, SideX / 2.0 * scaleX, VideoWidth * scaleX, ActualWidth),
+            PanBoundsCalculator.OverviewFraction(pos.Y, SideY / 2.0 * scaleY, VideoHeight * scaleY, ActualHeight));
+    }
+
+    /// <summary>DIPs of this control per pixel of the minimap, or 1 while either size is unknown.</summary>
+    private static double MapScale(double mapExtent, double controlExtent) =>
+        mapExtent > 0 && controlExtent > 0 ? controlExtent / mapExtent : 1;
 
     private void RecalcVideoSize() => UI(() =>
     {

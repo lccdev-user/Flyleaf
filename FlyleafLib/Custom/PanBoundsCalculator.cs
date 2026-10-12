@@ -25,21 +25,17 @@ public static class PanBoundsCalculator
     }
 
     /// <summary>
-    /// Recovers a live viewport's unzoomed geometry (<paramref name="unzoomedSize"/>,
-    /// <paramref name="baselineOffset"/>) from its current, already zoomed/panned reading
-    /// </summary>
-    public static bool TryInvertBaseline(double viewportPos, double viewportSize, double zoom, double center, double pan, out double unzoomedSize, out double baselineOffset)
+    /// Where a point on one axis of the zoom overview sits in the picture, 0..1.
+    /// </summary>    
+    public static double OverviewFraction(double position, double pictureStart, double pictureExtent, double controlExtent)
     {
-        unzoomedSize = zoom > 0 ? viewportSize / zoom : 0;
-
-        var denominator = 2 * pan + 1;
-        if (Math.Abs(denominator) < 1e-6)
+        if (pictureExtent <= 0)
         {
-            baselineOffset = 0;
-            return false;
+            pictureStart = 0;
+            pictureExtent = controlExtent;
         }
 
-        baselineOffset = (viewportPos - unzoomedSize * pan + unzoomedSize * (zoom - 1) * center) / denominator;
-        return true;
+        return pictureExtent > 0 ? Math.Clamp((position - pictureStart) / pictureExtent, 0, 1) : 0;
     }
+
 }
