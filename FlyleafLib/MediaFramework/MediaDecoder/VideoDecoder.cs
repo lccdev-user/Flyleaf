@@ -1192,8 +1192,6 @@ public unsafe class VideoDecoder : DecoderBase
                 {
                     if (CanDebug) Log.Debug("Ignoring non-key packet");
                     av_packet_unref(demuxer.packet);
-                    if(demuxer.IsCustomStream() && demuxer.CustomFrameCount() > 1)
-                        return AVERROR_EOF;
                     continue;
                 }
 

@@ -2,12 +2,7 @@
 #nullable enable
 public interface ICustomVideoStream
 {
-    event Action<long>? StartTimeChanged;
     event Action<long>? CurrentTimeChanged;
-    /// <summary>
-    /// The real start date of the video archive. The default is minus 30 days before the current date.
-    /// </summary>
-    DateTime StartRealTime { get; }
     /// <summary>
     /// Target timestamp in milliseconds for video frame timestamp search operations
     /// </summary>
@@ -16,10 +11,6 @@ public interface ICustomVideoStream
     /// The initial timestamp of the video archive (in milliseconds). The default is minus 30 days before the current date.
     /// </summary>
     long StartTimestamp { get; }
-    /// <summary>
-    /// The first timestamp of the video response (in milliseconds).
-    /// </summary>
-    long FirstTimestampInGoP { get; }
     /// <summary>
     ///
     /// </summary>
@@ -39,11 +30,8 @@ public interface ICustomVideoStream
     Double FrameDuration { get; }
     int FramesPerSecond { get; }
     long PictureGroupTimeStamp { get; }
-    double PictureGroupFrameDuration { get; }
     int PictureGroupFrameIndex { get; set; }
     bool IsLive { get; }
-    int ExpectedFrameIndex { get; }
-    long FrameCount { get; set; }
     bool IsPlayStopMode { get; }
     bool SearchCompleted { get; set; }
     bool IsBufferReady { get; }
