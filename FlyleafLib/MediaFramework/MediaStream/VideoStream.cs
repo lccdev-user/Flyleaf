@@ -333,7 +333,7 @@ public unsafe class VideoStream : StreamBase
     {
         PixelFormatStr  = LowerCaseFirstChar(PixelFormat.ToString());
         PixelFormatDesc = av_pix_fmt_desc_get(PixelFormat);
-        PixelComps      = PixelFormatDesc->comp.ToArray();
+        PixelComps      = ((ReadOnlySpan<AVComponentDescriptor>)PixelFormatDesc->comp).ToArray();
         ColorType       = PixelComps.Length == 1 ? ColorType.Gray : ((PixelFormatDesc->flags & PixFmtFlags.Rgb) != 0 ? ColorType.RGB : ColorType.YUV);
         PixelPlanes     = 0;
         
